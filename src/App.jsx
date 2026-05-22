@@ -41,7 +41,9 @@ export default function App() {
   const chartRef = useRef(null);
   const [error, setError] = useState('');
   const [tracks, setTracks] = useState(null);
-  const [intervalOption, setIntervalOption] = useState(intervalOptions[0]);
+  const [intervalOption, setIntervalOption] = useState(
+    intervalOptions.find((option) => option.type === 'auto') || intervalOptions[0],
+  );
   const [chartAxisKey, setChartAxisKey] = useState(metricOptions[0].key);
   const [smoothingOption, setSmoothingOption] = useState(smoothingOptions[1]);
   const [zoomWindow, setZoomWindow] = useState([0, 0]);
@@ -193,98 +195,8 @@ export default function App() {
         <div className="chip">Mobile-friendly</div>
       </header>
 
-      <section className="card">
-        <div className="section-header">
-          <div>
-            <h2>Upload track</h2>
-            <p>Drop a GPX or FIT file or tap to select one. The table updates by interval.</p>
-          </div>
-          <div className="select-wrap">
-            <label htmlFor="interval">Interval</label>
-            <select id="interval" value={intervalOption.label} onChange={(event) => setIntervalOption(intervalOptions.find((option) => option.label === event.target.value) || intervalOptions[0])}>
-              {intervalOptions.map((option) => (
-                <option key={option.label} value={option.label}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        <div
-          className="dropzone"
-          onDragOver={(event) => event.preventDefault()}
-          onDrop={(event) => {
-            event.preventDefault();
-            const file = event.dataTransfer.files?.[0];
-            if (file) handleFile(file);
-          }}
-        >
-          <label htmlFor="track-file" className="drop-label">
-            {tracks ? 'Fichier chargé : ' + tracks.fileName : 'Choisissez un GPX/.FIT ou glissez-le ici'}
-          </label>
-          <input id="track-file" type="file" accept=".gpx,.fit" onChange={handleFileChange} />
-        </div>
-
-        {error && <div className="error-banner">{error}</div>}
-      </section>
-
       {tracks ? (
         <>
-          <section className="card">
-            <div className="section-header">
-              <div>
-                <h2>Interval summary</h2>
-                <p>Each row shows duration, distance, pace, GAP, elevation gain and HR.</p>
-              </div>
-              <button type="button" className="clear-button" onClick={() => setShowTable((prev) => !prev)}>
-                {showTable ? 'Hide intervals' : 'Show intervals'}
-              </button>
-            </div>
-
-            {showTable ? (
-              <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Interval</th>
-                    <th>Duration</th>
-                    <th>Distance</th>
-                    <th>Pace</th>
-                    <th>GAP</th>
-                    <th>Gain</th>
-                    <th>Avg HR</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {intervalRows.map((row) => (
-                    <tr key={row.index}>
-                      <td>{row.index}</td>
-                      <td>{formatDuration(row.duration)}</td>
-                      <td>{formatNumber(row.distance / 1000, 2)} km</td>
-                      <td>{formatPace(row.pace)}</td>
-                      <td>{formatPace(row.gap)}</td>
-                      <td>{formatNumber(row.elevationGain, 1)} m</td>
-                      <td>{formatNumber(row.avgHr, 0)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr>
-                    <td>Total</td>
-                    <td>{formatDuration(intervalDuration)}</td>
-                    <td>{formatNumber(intervalDistance / 1000, 2)} km</td>
-                    <td>{formatPace(totalPace)}</td>
-                    <td>{formatPace(totalGap)}</td>
-                    <td>{formatNumber(intervalRows.reduce((acc, row) => acc + row.elevationGain, 0), 1)} m</td>
-                    <td>{formatNumber(totalHr, 0)}</td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-            ) : null}
-          </section>
-
           <section className="card">
             <div className="section-header">
               <div>
@@ -366,8 +278,109 @@ export default function App() {
 
             <div className="chart-note">Select with the brush, then press Enter to zoom the selected window.</div>
           </section>
+
+          <section className="card">
+            <div className="section-header">
+              <div>
+                <h2>Intervals</h2>
+                <p>Click an interval to zoom the chart. Shift-click to extend; Cmd/Ctrl-click to toggle.</p>
+              </div>
+              <div className="chart-controls">
+                <div className="select-wrap">
+                  <label htmlFor="interval">Mode</label>
+                  <select
+                    id="interval"
+                    value={intervalOption.label}
+                    onChange={(event) =>
+                      setIntervalOption(
+                        intervalOptions.find((option) => option.label === event.target.value) ||
+                          intervalOptions[0],
+                      )
+                    }
+                  >
+                    {intervalOptions.map((option) => (
+                      <option key={option.label} value={option.label}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <button type="button" className="clear-button" onClick={() => setShowTable((prev) => !prev)}>
+                  {showTable ? 'Hide table' : 'Show table'}
+                </button>
+              </div>
+            </div>
+
+            {showTable ? (
+              <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Interval</th>
+                    <th>Duration</th>
+                    <th>Distance</th>
+                    <th>Pace</th>
+                    <th>GAP</th>
+                    <th>Gain</th>
+                    <th>Avg HR</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {intervalRows.map((row) => (
+                    <tr key={row.index}>
+                      <td>{row.index}</td>
+                      <td>{formatDuration(row.duration)}</td>
+                      <td>{formatNumber(row.distance / 1000, 2)} km</td>
+                      <td>{formatPace(row.pace)}</td>
+                      <td>{formatPace(row.gap)}</td>
+                      <td>{formatNumber(row.elevationGain, 1)} m</td>
+                      <td>{formatNumber(row.avgHr, 0)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td>Total</td>
+                    <td>{formatDuration(intervalDuration)}</td>
+                    <td>{formatNumber(intervalDistance / 1000, 2)} km</td>
+                    <td>{formatPace(totalPace)}</td>
+                    <td>{formatPace(totalGap)}</td>
+                    <td>{formatNumber(intervalRows.reduce((acc, row) => acc + row.elevationGain, 0), 1)} m</td>
+                    <td>{formatNumber(totalHr, 0)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+            ) : null}
+          </section>
         </>
       ) : null}
+
+      <section className="card">
+        <div className="section-header">
+          <div>
+            <h2>Upload track</h2>
+            <p>Drop a GPX or FIT file or tap to select one.</p>
+          </div>
+        </div>
+
+        <div
+          className="dropzone"
+          onDragOver={(event) => event.preventDefault()}
+          onDrop={(event) => {
+            event.preventDefault();
+            const file = event.dataTransfer.files?.[0];
+            if (file) handleFile(file);
+          }}
+        >
+          <label htmlFor="track-file" className="drop-label">
+            {tracks ? 'Fichier chargé : ' + tracks.fileName : 'Choisissez un GPX/.FIT ou glissez-le ici'}
+          </label>
+          <input id="track-file" type="file" accept=".gpx,.fit" onChange={handleFileChange} />
+        </div>
+
+        {error && <div className="error-banner">{error}</div>}
+      </section>
     </div>
   );
 }
