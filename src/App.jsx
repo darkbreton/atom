@@ -49,13 +49,23 @@ export default function App() {
   const [zoomWindow, setZoomWindow] = useState([0, 0]);
   const [selectionRange, setSelectionRange] = useState(null);
   const [showTable, setShowTable] = useState(false);
+  const [selectedIntervalIndices, setSelectedIntervalIndices] = useState([]);
+  const [lastClickedIntervalIndex, setLastClickedIntervalIndex] = useState(null);
 
   useEffect(() => {
     if (!tracks) return;
     const total = tracks.segments.reduce((sum, segment) => sum + segment.distance, 0);
     setZoomWindow([0, total]);
     setSelectionRange(null);
+    setSelectedIntervalIndices([]);
+    setLastClickedIntervalIndex(null);
   }, [tracks]);
+
+  useEffect(() => {
+    setSelectedIntervalIndices([]);
+    setLastClickedIntervalIndex(null);
+    setSelectionRange(null);
+  }, [intervalOption]);
 
   const handleFile = async (file) => {
     setError('');
@@ -131,6 +141,22 @@ export default function App() {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [selectionRange, totalDistance]);
+
+  useEffect(() => {
+    if (!intervalRows.length || !totalDistance) return;
+    if (selectedIntervalIndices.length === 0) {
+      setZoomWindow([0, totalDistance]);
+      setSelectionRange(null);
+      return;
+    }
+    if (selectedIntervalIndices.length === 1) {
+      const row = intervalRows[selectedIntervalIndices[0]];
+      if (row && Number.isFinite(row.startDistance) && Number.isFinite(row.endDistance)) {
+        setZoomWindow([row.startDistance, row.endDistance]);
+        setSelectionRange(null);
+      }
+    }
+  }, [selectedIntervalIndices, intervalRows, totalDistance]);
 
   const visibleData = useMemo(() => {
     if (!chartDataWithSmoothing.length) return [];
@@ -310,6 +336,33 @@ export default function App() {
                 </button>
               </div>
             </div>
+
+            {intervalRows.length > 0 && (
+              <div className="interval-pills" role="group" aria-label="Intervals">
+                {intervalRows.map((row, idx) => {
+                  const selected = selectedIntervalIndices.includes(idx);
+                  return (
+                    <button
+                      key={idx}
+                      type="button"
+                      className={`interval-pill${selected ? ' is-selected' : ''}`}
+                      aria-pressed={selected}
+                      onClick={() => {
+                        if (selected && selectedIntervalIndices.length === 1) {
+                          setSelectedIntervalIndices([]);
+                          setLastClickedIntervalIndex(null);
+                        } else {
+                          setSelectedIntervalIndices([idx]);
+                          setLastClickedIntervalIndex(idx);
+                        }
+                      }}
+                    >
+                      {row.index}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
 
             {showTable ? (
               <div className="table-wrap">
