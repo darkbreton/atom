@@ -562,3 +562,67 @@ export const computeStats = (data, key) => {
 };
 
 export const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+
+export const resolvePillClick = (currentIndices, anchor, clickedIndex, modifiers) => {
+  const { shiftKey, metaOrCtrlKey } = modifiers;
+
+  if (shiftKey && anchor != null) {
+    const lo = Math.min(anchor, clickedIndex);
+    const hi = Math.max(anchor, clickedIndex);
+    const range = [];
+    for (let i = lo; i <= hi; i += 1) range.push(i);
+    return { nextIndices: range, nextAnchor: anchor };
+  }
+
+  if (metaOrCtrlKey) {
+    const set = new Set(currentIndices);
+    if (set.has(clickedIndex)) set.delete(clickedIndex);
+    else set.add(clickedIndex);
+    return {
+      nextIndices: [...set].sort((a, b) => a - b),
+      nextAnchor: clickedIndex,
+    };
+  }
+
+  if (currentIndices.length === 1 && currentIndices[0] === clickedIndex) {
+    return { nextIndices: [], nextAnchor: null };
+  }
+  return { nextIndices: [clickedIndex], nextAnchor: clickedIndex };
+};
+
+export const buildStitchedData = (chartData, intervals, selectedIndices) => {
+  const sorted = [...selectedIndices].sort((a, b) => a - b);
+  const stitched = [];
+  const boundaries = [];
+  const ticks = [];
+  let xOffset = 0;
+
+  for (const idx of sorted) {
+    const interval = intervals[idx];
+    if (!interval) continue;
+    const segment = chartData.filter(
+      (point) =>
+        point.distance >= interval.startDistance &&
+        point.distance <= interval.endDistance,
+    );
+    if (!segment.length) continue;
+
+    const segmentStartDist = segment[0].distance;
+    const segmentEndDist = segment[segment.length - 1].distance;
+    const segmentLength = segmentEndDist - segmentStartDist;
+
+    for (const point of segment) {
+      stitched.push({
+        ...point,
+        x: xOffset + (point.distance - segmentStartDist),
+        intervalIndex: interval.index,
+      });
+    }
+    ticks.push({ x: xOffset + segmentLength / 2, label: String(interval.index) });
+    xOffset += segmentLength;
+    boundaries.push(xOffset);
+  }
+
+  boundaries.pop();
+  return { stitched, boundaries, ticks, totalX: xOffset };
+};

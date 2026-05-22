@@ -9,6 +9,7 @@ import {
   ResponsiveContainer,
   Brush,
   ReferenceArea,
+  ReferenceLine,
 } from 'recharts';
 import {
   intervalOptions,
@@ -27,6 +28,8 @@ import {
   smoothChartData,
   computeStats,
   clamp,
+  resolvePillClick,
+  buildStitchedData,
 } from './lib/trackUtils';
 
 const smoothingOptions = [
@@ -116,6 +119,13 @@ export default function App() {
     return smoothChartData(chartData, chartAxisKey, smoothingOption.value);
   }, [chartData, chartAxisKey, smoothingOption]);
 
+  const stitchedMode = selectedIntervalIndices.length >= 2;
+
+  const stitched = useMemo(() => {
+    if (!stitchedMode) return null;
+    return buildStitchedData(chartDataWithSmoothing, intervalRows, selectedIntervalIndices);
+  }, [stitchedMode, chartDataWithSmoothing, intervalRows, selectedIntervalIndices]);
+
   const totalDistance = chartDataWithSmoothing.length ? chartDataWithSmoothing[chartDataWithSmoothing.length - 1].distance : 0;
 
   useEffect(() => {
@@ -159,9 +169,12 @@ export default function App() {
   }, [selectedIntervalIndices, intervalRows, totalDistance]);
 
   const visibleData = useMemo(() => {
+    if (stitchedMode && stitched) return stitched.stitched;
     if (!chartDataWithSmoothing.length) return [];
-    return chartDataWithSmoothing.filter((point) => point.distance >= zoomWindow[0] && point.distance <= zoomWindow[1]);
-  }, [chartDataWithSmoothing, zoomWindow]);
+    return chartDataWithSmoothing.filter(
+      (point) => point.distance >= zoomWindow[0] && point.distance <= zoomWindow[1],
+    );
+  }, [stitchedMode, stitched, chartDataWithSmoothing, zoomWindow]);
 
   const visibleStats = useMemo(() => computeStats(visibleData, 'smoothedValue'), [visibleData]);
 
@@ -206,7 +219,9 @@ export default function App() {
   const totalHr = intervalRows.reduce((acc, row) => acc + (Number.isFinite(row.avgHr) ? row.avgHr * row.duration : 0), 0) / Math.max(1, intervalRows.reduce((acc, row) => acc + (Number.isFinite(row.avgHr) ? row.duration : 0), 0));
 
   const chartMetric = metricOptions.find((option) => option.key === chartAxisKey) || metricOptions[0];
-  const visibleRangeLabel = `${formatDistance(zoomWindow[0])} → ${formatDistance(zoomWindow[1])}`;
+  const visibleRangeLabel = stitchedMode
+    ? `stitched: ${selectedIntervalIndices.map((i) => intervalRows[i]?.index).filter(Boolean).join(', ')}`
+    : `${formatDistance(zoomWindow[0])} → ${formatDistance(zoomWindow[1])}`;
   const selectionLabel = selectionRange ? `${formatDistance(selectionRange.start)} → ${formatDistance(selectionRange.end)}` : null;
   const visibleStatsText = visibleStats ? `${formatMetric(visibleStats.min, chartAxisKey)} / ${formatMetric(visibleStats.avg, chartAxisKey)} / ${formatMetric(visibleStats.max, chartAxisKey)}` : '--';
   const selectionStatsText = selectionStats ? `${formatMetric(selectionStats.min, chartAxisKey)} / ${formatMetric(selectionStats.avg, chartAxisKey)} / ${formatMetric(selectionStats.max, chartAxisKey)}` : '--';
@@ -250,7 +265,16 @@ export default function App() {
                     ))}
                   </select>
                 </div>
-                <button type="button" className="clear-button" onClick={() => setZoomWindow([0, totalDistance])}>
+                <button
+                  type="button"
+                  className="clear-button"
+                  onClick={() => {
+                    setSelectedIntervalIndices([]);
+                    setLastClickedIntervalIndex(null);
+                    setZoomWindow([0, totalDistance]);
+                    setSelectionRange(null);
+                  }}
+                >
                   Reset zoom
                 </button>
                 <button type="button" className="clear-button" onClick={clearSelection}>
@@ -268,7 +292,20 @@ export default function App() {
               <ResponsiveContainer width="100%" height={320}>
                 <LineChart data={visibleData} margin={{ top: 12, right: 18, left: 18, bottom: 0 }}>
                   <CartesianGrid stroke="rgba(255,255,255,0.08)" vertical={false} />
-                  <XAxis dataKey="distance" tickFormatter={(value) => `${(value / 1000).toFixed(2)} km`} type="number" domain={["dataMin", "dataMax"]} />
+                  <XAxis
+                    dataKey={stitchedMode ? 'x' : 'distance'}
+                    type="number"
+                    domain={stitchedMode && stitched ? [0, stitched.totalX] : ['dataMin', 'dataMax']}
+                    ticks={stitchedMode && stitched ? stitched.ticks.map((t) => t.x) : undefined}
+                    tickFormatter={
+                      stitchedMode && stitched
+                        ? (value) => {
+                            const tick = stitched.ticks.find((t) => Math.abs(t.x - value) < 0.5);
+                            return tick ? `int ${tick.label}` : '';
+                          }
+                        : (value) => `${(value / 1000).toFixed(2)} km`
+                    }
+                  />
                   <YAxis
                     reversed={chartAxisKey === 'pace' || chartAxisKey === 'gap'}
                     tickFormatter={(value) => (chartAxisKey === 'pace' || chartAxisKey === 'gap' ? formatPace(value) : formatNumber(value, chartAxisKey === 'ele' ? 0 : 0))}
@@ -279,10 +316,19 @@ export default function App() {
                     contentStyle={{ backgroundColor: 'transparent', border: 'none', boxShadow: 'none' }}
                     labelStyle={{ color: '#9bb3d8', fontSize: '0.85rem' }}
                     itemStyle={{ color: '#e7eef8', fontSize: '0.95rem' }}
-                    labelFormatter={(value) => `${(value / 1000).toFixed(2)} km`}
+                    labelFormatter={(value, payload) => {
+                      const point = payload?.[0]?.payload;
+                      if (stitchedMode && point && point.intervalIndex != null) {
+                        return `int ${point.intervalIndex} · ${(point.distance / 1000).toFixed(2)} km`;
+                      }
+                      return `${(value / 1000).toFixed(2)} km`;
+                    }}
                     formatter={(value) => (chartAxisKey === 'pace' || chartAxisKey === 'gap' ? formatPace(value) : formatNumber(value, chartAxisKey === 'ele' ? 0 : 0))}
                   />
                   <Line type="monotone" dataKey="smoothedValue" stroke="#7dd3fc" dot={false} strokeWidth={2} isAnimationActive={false} animationDuration={0} />
+                  {stitchedMode && stitched && stitched.boundaries.map((x) => (
+                    <ReferenceLine key={x} x={x} stroke="rgba(255,255,255,0.22)" strokeDasharray="3 3" />
+                  ))}
                   {selectionRange && (
                     <ReferenceArea x1={selectionRange.start} x2={selectionRange.end} stroke="rgba(59, 130, 246, 0.4)" fill="rgba(59, 130, 246, 0.12)" />
                   )}
@@ -347,14 +393,15 @@ export default function App() {
                       type="button"
                       className={`interval-pill${selected ? ' is-selected' : ''}`}
                       aria-pressed={selected}
-                      onClick={() => {
-                        if (selected && selectedIntervalIndices.length === 1) {
-                          setSelectedIntervalIndices([]);
-                          setLastClickedIntervalIndex(null);
-                        } else {
-                          setSelectedIntervalIndices([idx]);
-                          setLastClickedIntervalIndex(idx);
-                        }
+                      onClick={(event) => {
+                        const { nextIndices, nextAnchor } = resolvePillClick(
+                          selectedIntervalIndices,
+                          lastClickedIntervalIndex,
+                          idx,
+                          { shiftKey: event.shiftKey, metaOrCtrlKey: event.metaKey || event.ctrlKey },
+                        );
+                        setSelectedIntervalIndices(nextIndices);
+                        setLastClickedIntervalIndex(nextAnchor);
                       }}
                     >
                       {row.index}
