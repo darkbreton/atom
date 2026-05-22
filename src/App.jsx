@@ -54,6 +54,7 @@ export default function App() {
   const [selectedIntervalIndices, setSelectedIntervalIndices] = useState([]);
   const [lastClickedIntervalIndex, setLastClickedIntervalIndex] = useState(null);
   const dragStartRef = useRef(null);
+  const touchStartRef = useRef(null);
   const [isDragging, setIsDragging] = useState(false);
 
   useEffect(() => {
@@ -185,6 +186,29 @@ export default function App() {
     return computeStats(selected, 'smoothedValue');
   }, [chartDataWithSmoothing, selectionRange]);
 
+  const touchToChartX = (clientX) => {
+    if (!chartRef.current) return null;
+    const svg = chartRef.current.querySelector('svg');
+    if (!svg) return null;
+    const rect = svg.getBoundingClientRect();
+    const leftInset = 78;
+    const rightInset = 18;
+    const plotLeft = rect.left + leftInset;
+    const plotWidth = rect.width - leftInset - rightInset;
+    if (plotWidth <= 0) return null;
+    const fraction = clamp((clientX - plotLeft) / plotWidth, 0, 1);
+    let xMin;
+    let xMax;
+    if (stitchedMode && stitched) {
+      xMin = 0;
+      xMax = stitched.totalX;
+    } else {
+      xMin = zoomWindow[0];
+      xMax = zoomWindow[1];
+    }
+    return xMin + fraction * (xMax - xMin);
+  };
+
   const handleChartDoubleClick = (event) => {
     if (!chartRef.current || !totalDistance) return;
     const rect = chartRef.current.getBoundingClientRect();
@@ -282,7 +306,37 @@ export default function App() {
               {selectionRange && <div>Selection: {selectionLabel}</div>}
             </div>
 
-            <div className="chart-panel" ref={chartRef} onDoubleClick={handleChartDoubleClick}>
+            <div
+              className="chart-panel"
+              ref={chartRef}
+              onDoubleClick={handleChartDoubleClick}
+              onTouchStart={(event) => {
+                if (event.touches.length !== 2) return;
+                const x1 = touchToChartX(event.touches[0].clientX);
+                const x2 = touchToChartX(event.touches[1].clientX);
+                if (x1 == null || x2 == null) return;
+                touchStartRef.current = { startX1: x1, startX2: x2 };
+                setSelectionRange({ start: Math.min(x1, x2), end: Math.max(x1, x2) });
+                event.preventDefault();
+              }}
+              onTouchMove={(event) => {
+                if (!touchStartRef.current || event.touches.length !== 2) return;
+                const x1 = touchToChartX(event.touches[0].clientX);
+                const x2 = touchToChartX(event.touches[1].clientX);
+                if (x1 == null || x2 == null) return;
+                setSelectionRange({ start: Math.min(x1, x2), end: Math.max(x1, x2) });
+                event.preventDefault();
+              }}
+              onTouchEnd={(event) => {
+                if (!touchStartRef.current) return;
+                if (event.touches.length < 2) {
+                  touchStartRef.current = null;
+                }
+              }}
+              onTouchCancel={() => {
+                touchStartRef.current = null;
+              }}
+            >
               <ResponsiveContainer width="100%" height={320}>
                 <LineChart
                   data={visibleData}
