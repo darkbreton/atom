@@ -7,7 +7,6 @@ import {
   YAxis,
   Tooltip,
   ResponsiveContainer,
-  Brush,
   ReferenceArea,
   ReferenceLine,
 } from 'recharts';
@@ -54,6 +53,8 @@ export default function App() {
   const [showTable, setShowTable] = useState(false);
   const [selectedIntervalIndices, setSelectedIntervalIndices] = useState([]);
   const [lastClickedIntervalIndex, setLastClickedIntervalIndex] = useState(null);
+  const dragStartRef = useRef(null);
+  const [isDragging, setIsDragging] = useState(false);
 
   useEffect(() => {
     if (!tracks) return;
@@ -184,13 +185,6 @@ export default function App() {
     return computeStats(selected, 'smoothedValue');
   }, [chartDataWithSmoothing, selectionRange]);
 
-  const handleBrushChange = (brush) => {
-    if (!brush || brush.startIndex == null || brush.endIndex == null) return;
-    const start = visibleData[brush.startIndex]?.distance ?? zoomWindow[0];
-    const end = visibleData[brush.endIndex]?.distance ?? zoomWindow[1];
-    setSelectionRange({ start, end });
-  };
-
   const handleChartDoubleClick = (event) => {
     if (!chartRef.current || !totalDistance) return;
     const rect = chartRef.current.getBoundingClientRect();
@@ -290,7 +284,35 @@ export default function App() {
 
             <div className="chart-panel" ref={chartRef} onDoubleClick={handleChartDoubleClick}>
               <ResponsiveContainer width="100%" height={320}>
-                <LineChart data={visibleData} margin={{ top: 12, right: 18, left: 18, bottom: 0 }}>
+                <LineChart
+                  data={visibleData}
+                  margin={{ top: 12, right: 18, left: 18, bottom: 0 }}
+                  onMouseDown={(event) => {
+                    if (!event || event.activeLabel == null) return;
+                    dragStartRef.current = event.activeLabel;
+                    setIsDragging(true);
+                    setSelectionRange({ start: event.activeLabel, end: event.activeLabel });
+                  }}
+                  onMouseMove={(event) => {
+                    if (!isDragging || !event || event.activeLabel == null) return;
+                    const start = dragStartRef.current;
+                    const end = event.activeLabel;
+                    setSelectionRange({
+                      start: Math.min(start, end),
+                      end: Math.max(start, end),
+                    });
+                  }}
+                  onMouseUp={() => {
+                    if (!isDragging) return;
+                    setIsDragging(false);
+                    if (selectionRange && selectionRange.end - selectionRange.start < 1) {
+                      setSelectionRange(null);
+                    }
+                  }}
+                  onMouseLeave={() => {
+                    if (isDragging) setIsDragging(false);
+                  }}
+                >
                   <CartesianGrid stroke="rgba(255,255,255,0.08)" vertical={false} />
                   <XAxis
                     dataKey={stitchedMode ? 'x' : 'distance'}
@@ -332,7 +354,6 @@ export default function App() {
                   {selectionRange && (
                     <ReferenceArea x1={selectionRange.start} x2={selectionRange.end} stroke="rgba(59, 130, 246, 0.4)" fill="rgba(59, 130, 246, 0.12)" />
                   )}
-                  <Brush dataKey="distance" height={26} stroke="#7dd3fc" travellerWidth={10} tickFormatter={(value) => `${(value / 1000).toFixed(2)} km`} onChange={handleBrushChange} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -348,7 +369,9 @@ export default function App() {
               </div>
             </div>
 
-            <div className="chart-note">Select with the brush, then press Enter to zoom the selected window.</div>
+            <div className="chart-note">
+              Drag on the chart (or two-finger drag on mobile) to measure a window. Press Enter to zoom into it.
+            </div>
           </section>
 
           <section className="card">
