@@ -297,45 +297,6 @@ td {
   font-size: 0.9rem;
 }
 
-.stats-row {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1rem;
-  margin-top: 1rem;
-}
-
-.stat-label {
-  font-size: 0.78rem;
-  text-transform: uppercase;
-  color: #94a3b8;
-  letter-spacing: 0.12em;
-}
-
-.stat-value {
-  margin-top: 0.35rem;
-  font-size: 1rem;
-  color: #e2e8f0;
-}
-
-.clear-button {
-  border: 1px solid rgba(59, 130, 246, 0.32);
-  background: rgba(59, 130, 246, 0.08);
-  color: #dbeafe;
-  border-radius: 14px;
-  padding: 0.85rem 1rem;
-  cursor: pointer;
-}
-
-.clear-button:hover {
-  background: rgba(59, 130, 246, 0.14);
-}
-
-.chart-note {
-  margin-top: 1rem;
-  color: #94a3b8;
-  font-size: 0.9rem;
-}
-
 @media (max-width: 720px) {
   .chart-controls,
   .stats-row {
