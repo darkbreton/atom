@@ -30,6 +30,17 @@ import {
   resolvePillClick,
   buildStitchedData,
 } from './lib/trackUtils';
+import {
+  requestAccessToken,
+  revokeAccessToken,
+  listFitFiles,
+  downloadFile,
+} from './lib/drive';
+
+const DRIVE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+const DRIVE_API_KEY = import.meta.env.VITE_GOOGLE_API_KEY;
+const DRIVE_FOLDER_ID = import.meta.env.VITE_GOOGLE_DRIVE_FOLDER_ID;
+const DRIVE_CONFIGURED = Boolean(DRIVE_CLIENT_ID && DRIVE_API_KEY && DRIVE_FOLDER_ID);
 
 const smoothingOptions = [
   { label: 'Off', value: 0 },
@@ -56,6 +67,12 @@ export default function App() {
   const dragStartRef = useRef(null);
   const touchStartRef = useRef(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [driveToken, setDriveToken] = useState(null);
+  const [driveFiles, setDriveFiles] = useState([]);
+  const [driveStatus, setDriveStatus] = useState('idle');
+  const [driveError, setDriveError] = useState('');
+  const [driveLoadingId, setDriveLoadingId] = useState(null);
+  const driveAutoLoadedRef = useRef(false);
 
   useEffect(() => {
     if (!tracks) return;
@@ -94,6 +111,74 @@ export default function App() {
       setError(err.message || 'Erreur de lecture du fichier.');
     }
   };
+
+  const loadFitArrayBuffer = async (arrayBuffer, fileName) => {
+    setError('');
+    try {
+      const { points, laps } = await parseFit(arrayBuffer);
+      const segments = buildSegments(points);
+      setTracks({ points, segments, fileName, fitLaps: laps });
+    } catch (err) {
+      setTracks(null);
+      setError(err.message || 'Erreur de lecture du fichier.');
+    }
+  };
+
+  const signInToDrive = async () => {
+    setDriveError('');
+    setDriveStatus('signing-in');
+    try {
+      const token = await requestAccessToken({ clientId: DRIVE_CLIENT_ID });
+      setDriveToken(token);
+      driveAutoLoadedRef.current = false;
+      setDriveStatus('listing');
+      const files = await listFitFiles({ token, apiKey: DRIVE_API_KEY, folderId: DRIVE_FOLDER_ID });
+      setDriveFiles(files);
+      setDriveStatus('ready');
+    } catch (err) {
+      setDriveStatus('idle');
+      setDriveToken(null);
+      setDriveFiles([]);
+      setDriveError(err.message || 'Sign-in failed.');
+    }
+  };
+
+  const signOutFromDrive = async () => {
+    if (driveToken) {
+      try { await revokeAccessToken(driveToken); } catch (_err) { /* ignore */ }
+    }
+    setDriveToken(null);
+    setDriveFiles([]);
+    setDriveStatus('idle');
+    setDriveError('');
+    driveAutoLoadedRef.current = false;
+  };
+
+  const loadDriveFile = async (file) => {
+    if (!driveToken) return;
+    setDriveError('');
+    setDriveLoadingId(file.id);
+    try {
+      const bytes = await downloadFile({ token: driveToken, apiKey: DRIVE_API_KEY, fileId: file.id });
+      await loadFitArrayBuffer(bytes, file.name);
+    } catch (err) {
+      if (err.code === 'UNAUTHENTICATED') {
+        setDriveToken(null);
+        setDriveFiles([]);
+        setDriveStatus('idle');
+      }
+      setDriveError(err.message || 'Could not load the file.');
+    } finally {
+      setDriveLoadingId(null);
+    }
+  };
+
+  useEffect(() => {
+    if (driveAutoLoadedRef.current) return;
+    if (driveStatus !== 'ready' || !driveFiles.length) return;
+    driveAutoLoadedRef.current = true;
+    loadDriveFile(driveFiles[0]);
+  }, [driveStatus, driveFiles]);
 
   const handleFileChange = async (event) => {
     const file = event.target.files?.[0];
@@ -537,9 +622,75 @@ export default function App() {
         <div className="section-header">
           <div>
             <h2>Upload track</h2>
-            <p>Drop a GPX or FIT file or tap to select one.</p>
+            <p>Pull a recent run from Google Drive, or drop a GPX/FIT file.</p>
           </div>
         </div>
+
+        <div className="drive-source">
+          <div className="drive-header">
+            <div>
+              <div className="drive-title">Google Drive</div>
+              {!DRIVE_CONFIGURED && (
+                <div className="drive-hint">Drive disabled — set VITE_GOOGLE_* in .env.local</div>
+              )}
+            </div>
+            {DRIVE_CONFIGURED && driveToken && (
+              <button type="button" className="clear-button" onClick={signOutFromDrive}>
+                Sign out
+              </button>
+            )}
+          </div>
+
+          {DRIVE_CONFIGURED && !driveToken && (
+            <button
+              type="button"
+              className="clear-button drive-signin"
+              onClick={signInToDrive}
+              disabled={driveStatus === 'signing-in'}
+            >
+              {driveStatus === 'signing-in' ? 'Signing in…' : 'Sign in with Google'}
+            </button>
+          )}
+
+          {DRIVE_CONFIGURED && driveToken && driveStatus === 'listing' && (
+            <div className="drive-hint">Loading files…</div>
+          )}
+
+          {DRIVE_CONFIGURED && driveToken && driveStatus === 'ready' && driveFiles.length === 0 && (
+            <div className="drive-hint">No FIT files in this folder yet.</div>
+          )}
+
+          {DRIVE_CONFIGURED && driveToken && driveFiles.length > 0 && (
+            <ul className="drive-list">
+              {driveFiles.map((file) => {
+                const isCurrent = tracks?.fileName === file.name;
+                const isLoading = driveLoadingId === file.id;
+                return (
+                  <li key={file.id} className={`drive-row${isCurrent ? ' is-current' : ''}`}>
+                    <div className="drive-row-meta">
+                      <div className="drive-row-name">{file.name}</div>
+                      <div className="drive-row-date">
+                        {new Date(file.modifiedTime).toLocaleString()}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className="clear-button drive-row-load"
+                      onClick={() => loadDriveFile(file)}
+                      disabled={isLoading}
+                    >
+                      {isLoading ? 'Loading…' : isCurrent ? 'Reload' : 'Load'}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+
+          {driveError && <div className="error-banner">{driveError}</div>}
+        </div>
+
+        <div className="drive-divider"><span>or</span></div>
 
         <div
           className="dropzone"
