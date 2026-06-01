@@ -1,5 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { ChangeEvent, DragEvent, MouseEvent, TouchEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type {
+  ChangeEvent,
+  DragEvent,
+  MouseEvent,
+  PointerEvent as ReactPointerEvent,
+  TouchEvent,
+} from "react";
 import {
   LineChart,
   Line,
@@ -150,6 +156,51 @@ export default function App() {
     mq.addEventListener("change", onChange);
     return () => mq.removeEventListener("change", onChange);
   }, []);
+
+  // Pixel rect of the chart's plotting area (relative to the chart container),
+  // measured from recharts' grid so the draggable selection overlay lines up
+  // exactly with the rendered chart regardless of axis width.
+  const [plotRect, setPlotRect] = useState<{
+    left: number;
+    width: number;
+    top: number;
+    height: number;
+  } | null>(null);
+  const selDragRef = useRef<{
+    mode: "move" | "left" | "right";
+    startClientX: number;
+    origStart: number;
+    origEnd: number;
+  } | null>(null);
+
+  const measurePlot = useCallback(() => {
+    const container = chartRef.current;
+    const grid = container?.querySelector(
+      ".recharts-cartesian-grid",
+    ) as SVGGElement | null;
+    if (!container || !grid) {
+      setPlotRect(null);
+      return;
+    }
+    const c = container.getBoundingClientRect();
+    const g = grid.getBoundingClientRect();
+    setPlotRect({
+      left: g.left - c.left,
+      width: g.width,
+      top: g.top - c.top,
+      height: g.height,
+    });
+  }, []);
+
+  useEffect(() => {
+    const ro = new ResizeObserver(() => measurePlot());
+    if (chartRef.current) ro.observe(chartRef.current);
+    window.addEventListener("resize", measurePlot);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", measurePlot);
+    };
+  }, [measurePlot]);
 
   const loadTracksFromBuffer = async (
     bytes: ArrayBuffer,
@@ -413,6 +464,77 @@ export default function App() {
     }
   };
 
+  // Re-measure the plot area whenever the chart re-renders (data / zoom /
+  // axis changes don't resize the container, so ResizeObserver won't fire).
+  useEffect(() => {
+    const id = requestAnimationFrame(() => measurePlot());
+    return () => cancelAnimationFrame(id);
+  }, [
+    visibleData,
+    zoomWindow,
+    isMobile,
+    chartAxisKey,
+    chartAxisKey2,
+    measurePlot,
+  ]);
+
+  // Drag the whole selection (move) or its edges (left/right handles).
+  const beginSelDrag =
+    (mode: "move" | "left" | "right") => (event: ReactPointerEvent) => {
+      if (!selectionRange) return;
+      event.stopPropagation();
+      event.preventDefault();
+      (event.currentTarget as Element).setPointerCapture(event.pointerId);
+      selDragRef.current = {
+        mode,
+        startClientX: event.clientX,
+        origStart: selectionRange.start,
+        origEnd: selectionRange.end,
+      };
+    };
+
+  const onSelDragMove = (event: ReactPointerEvent): void => {
+    const drag = selDragRef.current;
+    if (!drag || !plotRect || plotRect.width <= 0) return;
+    const span = zoomWindow[1] - zoomWindow[0];
+    if (span <= 0) return;
+    const dataDelta =
+      ((event.clientX - drag.startClientX) / plotRect.width) * span;
+    const minSpan = Math.max(1, span * 0.01);
+    if (drag.mode === "move") {
+      const width = drag.origEnd - drag.origStart;
+      const start = clamp(
+        drag.origStart + dataDelta,
+        zoomWindow[0],
+        zoomWindow[1] - width,
+      );
+      setSelectionRange({ start, end: start + width });
+    } else if (drag.mode === "left") {
+      const start = clamp(
+        drag.origStart + dataDelta,
+        zoomWindow[0],
+        drag.origEnd - minSpan,
+      );
+      setSelectionRange({ start, end: drag.origEnd });
+    } else {
+      const end = clamp(
+        drag.origEnd + dataDelta,
+        drag.origStart + minSpan,
+        zoomWindow[1],
+      );
+      setSelectionRange({ start: drag.origStart, end });
+    }
+  };
+
+  const endSelDrag = (event: ReactPointerEvent): void => {
+    if (!selDragRef.current) return;
+    const el = event.currentTarget as Element;
+    if (el.hasPointerCapture?.(event.pointerId)) {
+      el.releasePointerCapture(event.pointerId);
+    }
+    selDragRef.current = null;
+  };
+
   const clearSelection = (): void => setSelectionRange(null);
 
   const intervalDistance = tableIntervalRows.reduce(
@@ -453,8 +575,7 @@ export default function App() {
     () => ({
       smoothedValue: { label: chartMetric.label, color: "var(--chart-1)" },
       smoothedValue2: {
-        label:
-          metricOptions.find((o) => o.key === chartAxisKey2)?.label ?? "",
+        label: metricOptions.find((o) => o.key === chartAxisKey2)?.label ?? "",
         color: "var(--primary)",
       },
     }),
@@ -467,7 +588,9 @@ export default function App() {
         .join(", ")}`
     : `${formatDistance(zoomWindow[0])} → ${formatDistance(zoomWindow[1])}`;
   const selectionLabel = selectionRange
-    ? `${formatDistance(selectionRange.start)} → ${formatDistance(selectionRange.end)}`
+    ? `${+((selectionRange.end - selectionRange.start) / 1000).toFixed(
+        2,
+      )}km (start at ${formatDistance(selectionRange.start)})`
     : null;
   const visibleStatsText = visibleStats
     ? `${formatMetric(visibleStats.min, chartAxisKey)} / ${formatMetric(
@@ -602,7 +725,7 @@ export default function App() {
               </div>
 
               <div
-                className="overflow-hidden rounded-md ring-1 ring-foreground/10 [touch-action:pan-y]"
+                className="relative overflow-hidden rounded-md ring-1 ring-foreground/10 [touch-action:pan-y]"
                 ref={chartRef}
                 onDoubleClick={handleChartDoubleClick}
                 onTouchStart={(event: TouchEvent<HTMLDivElement>) => {
@@ -645,11 +768,7 @@ export default function App() {
                 >
                   <LineChart
                     data={visibleData}
-                    margin={
-                      isMobile
-                        ? { top: 12, right: 6, left: 6, bottom: 0 }
-                        : { top: 12, right: 18, left: 18, bottom: 0 }
-                    }
+                    margin={{ top: 12, bottom: 0 }}
                     onMouseDown={(
                       event: { activeLabel?: number | string } | null,
                     ) => {
@@ -688,10 +807,7 @@ export default function App() {
                       if (isDragging) setIsDragging(false);
                     }}
                   >
-                    <CartesianGrid
-                      stroke="var(--border)"
-                      vertical={false}
-                    />
+                    <CartesianGrid stroke="var(--border)" vertical={false} />
                     <XAxis
                       dataKey={stitchedMode ? "x" : "distance"}
                       type="number"
@@ -755,12 +871,15 @@ export default function App() {
                       content={
                         <ChartTooltipContent
                           labelFormatter={
-                            ((_value: unknown, payload: ReadonlyArray<{
-                              payload?: {
-                                intervalIndex?: number;
-                                distance?: number;
-                              };
-                            }>) => {
+                            ((
+                              _value: unknown,
+                              payload: ReadonlyArray<{
+                                payload?: {
+                                  intervalIndex?: number;
+                                  distance?: number;
+                                };
+                              }>,
+                            ) => {
                               const point = payload?.[0]?.payload;
                               if (!point) return "";
                               if (
@@ -855,14 +974,73 @@ export default function App() {
                       ))}
                     {selectionRange && (
                       <ReferenceArea
+                        yAxisId="left"
                         x1={selectionRange.start}
                         x2={selectionRange.end}
-                        stroke="rgba(59, 130, 246, 0.4)"
-                        fill="rgba(59, 130, 246, 0.12)"
+                        stroke="var(--primary)"
+                        strokeWidth={1}
+                        fill="oklch(from var(--primary) l c h / .2)"
                       />
                     )}
                   </LineChart>
                 </ChartContainer>
+
+                {!isMobile &&
+                  !isDragging &&
+                  !stitchedMode &&
+                  selectionRange &&
+                  plotRect &&
+                  zoomWindow[1] > zoomWindow[0] &&
+                  (() => {
+                    const span = zoomWindow[1] - zoomWindow[0];
+                    const fStart = clamp(
+                      (selectionRange.start - zoomWindow[0]) / span,
+                      0,
+                      1,
+                    );
+                    const fEnd = clamp(
+                      (selectionRange.end - zoomWindow[0]) / span,
+                      0,
+                      1,
+                    );
+                    return (
+                      <div
+                        className="absolute z-10 cursor-grab bg-primary/10 transition-colors hover:bg-primary/20 active:cursor-grabbing"
+                        style={{
+                          left: plotRect.left + fStart * plotRect.width,
+                          width: Math.max(0, (fEnd - fStart) * plotRect.width),
+                          top: plotRect.top,
+                          height: plotRect.height,
+                        }}
+                        role="slider"
+                        aria-label="Selection — drag to move, drag edges to resize"
+                        onPointerDown={beginSelDrag("move")}
+                        onPointerMove={onSelDragMove}
+                        onPointerUp={endSelDrag}
+                        onPointerCancel={endSelDrag}
+                        onDoubleClick={(event) => event.stopPropagation()}
+                      >
+                        <div
+                          className="absolute inset-y-0 -left-1.5 w-3 cursor-ew-resize touch-none"
+                          onPointerDown={beginSelDrag("left")}
+                          onPointerMove={onSelDragMove}
+                          onPointerUp={endSelDrag}
+                          onPointerCancel={endSelDrag}
+                        >
+                          <div className="absolute inset-y-[40%] left-1/2 w-1 -translate-x-1/2 rounded-full bg-primary shadow" />
+                        </div>
+                        <div
+                          className="absolute inset-y-0 -right-1.5 w-3 cursor-ew-resize touch-none"
+                          onPointerDown={beginSelDrag("right")}
+                          onPointerMove={onSelDragMove}
+                          onPointerUp={endSelDrag}
+                          onPointerCancel={endSelDrag}
+                        >
+                          <div className="absolute inset-y-[40%] left-1/2 w-1 -translate-x-1/2 rounded-full bg-primary shadow" />
+                        </div>
+                      </div>
+                    );
+                  })()}
               </div>
 
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
