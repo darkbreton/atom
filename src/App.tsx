@@ -6,8 +6,6 @@ import {
   CartesianGrid,
   XAxis,
   YAxis,
-  Tooltip,
-  ResponsiveContainer,
   ReferenceArea,
   ReferenceLine,
 } from "recharts";
@@ -37,6 +35,12 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from "@/components/ui/chart";
 import {
   intervalOptions,
   metricOptions,
@@ -445,6 +449,17 @@ export default function App() {
   const chartMetric: MetricOption =
     metricOptions.find((option) => option.key === chartAxisKey) ||
     metricOptions[0];
+  const chartConfig: ChartConfig = useMemo(
+    () => ({
+      smoothedValue: { label: chartMetric.label, color: "var(--chart-1)" },
+      smoothedValue2: {
+        label:
+          metricOptions.find((o) => o.key === chartAxisKey2)?.label ?? "",
+        color: "var(--primary)",
+      },
+    }),
+    [chartMetric.label, chartAxisKey2],
+  );
   const visibleRangeLabel = stitchedMode
     ? `stitched: ${selectedIntervalIndices
         .map((i) => chartIntervalRows[i]?.index)
@@ -468,13 +483,13 @@ export default function App() {
     : "--";
 
   return (
-    <div className="mx-auto max-w-[1080px] px-2 pb-6 sm:px-4 sm:pb-8">
+    <div className="mx-auto max-w-5xl px-2 pb-6 sm:px-4 sm:pb-8">
       <header className="mb-4 flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="mb-1.5 text-xs uppercase tracking-[0.16em] text-muted-foreground">
             GPX + FIT interval analysis
           </p>
-          <h1 className="text-[clamp(1.6rem,3vw,2.4rem)] font-semibold leading-tight">
+          <h1 className="text-2xl font-semibold leading-tight">
             Condensed running analysis
           </h1>
         </div>
@@ -572,7 +587,11 @@ export default function App() {
                 >
                   Reset zoom
                 </Button>
-                <Button type="button" variant="outline" onClick={clearSelection}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={clearSelection}
+                >
                   Clear selection
                 </Button>
               </div>
@@ -583,259 +602,268 @@ export default function App() {
               </div>
 
               <div
-                className="overflow-hidden rounded-md bg-[rgba(11,16,32,0.95)] ring-1 ring-foreground/10 [touch-action:pan-y]"
+                className="overflow-hidden rounded-md ring-1 ring-foreground/10 [touch-action:pan-y]"
                 ref={chartRef}
-              onDoubleClick={handleChartDoubleClick}
-              onTouchStart={(event: TouchEvent<HTMLDivElement>) => {
-                if (event.touches.length !== 2) return;
-                const x1 = touchToChartX(event.touches[0].clientX);
-                const x2 = touchToChartX(event.touches[1].clientX);
-                if (x1 == null || x2 == null) return;
-                touchStartRef.current = { startX1: x1, startX2: x2 };
-                setSelectionRange({
-                  start: Math.min(x1, x2),
-                  end: Math.max(x1, x2),
-                });
-                event.preventDefault();
-              }}
-              onTouchMove={(event: TouchEvent<HTMLDivElement>) => {
-                if (!touchStartRef.current || event.touches.length !== 2)
-                  return;
-                const x1 = touchToChartX(event.touches[0].clientX);
-                const x2 = touchToChartX(event.touches[1].clientX);
-                if (x1 == null || x2 == null) return;
-                setSelectionRange({
-                  start: Math.min(x1, x2),
-                  end: Math.max(x1, x2),
-                });
-                event.preventDefault();
-              }}
-              onTouchEnd={(event: TouchEvent<HTMLDivElement>) => {
-                if (!touchStartRef.current) return;
-                if (event.touches.length < 2) {
-                  touchStartRef.current = null;
-                }
-              }}
-              onTouchCancel={() => {
-                touchStartRef.current = null;
-              }}
-            >
-              <ResponsiveContainer
-                width="100%"
-                height={320}
-                style={{ userSelect: "none" }}
-              >
-                <LineChart
-                  data={visibleData}
-                  margin={
-                    isMobile
-                      ? { top: 12, right: 6, left: 6, bottom: 0 }
-                      : { top: 12, right: 18, left: 18, bottom: 0 }
+                onDoubleClick={handleChartDoubleClick}
+                onTouchStart={(event: TouchEvent<HTMLDivElement>) => {
+                  if (event.touches.length !== 2) return;
+                  const x1 = touchToChartX(event.touches[0].clientX);
+                  const x2 = touchToChartX(event.touches[1].clientX);
+                  if (x1 == null || x2 == null) return;
+                  touchStartRef.current = { startX1: x1, startX2: x2 };
+                  setSelectionRange({
+                    start: Math.min(x1, x2),
+                    end: Math.max(x1, x2),
+                  });
+                  event.preventDefault();
+                }}
+                onTouchMove={(event: TouchEvent<HTMLDivElement>) => {
+                  if (!touchStartRef.current || event.touches.length !== 2)
+                    return;
+                  const x1 = touchToChartX(event.touches[0].clientX);
+                  const x2 = touchToChartX(event.touches[1].clientX);
+                  if (x1 == null || x2 == null) return;
+                  setSelectionRange({
+                    start: Math.min(x1, x2),
+                    end: Math.max(x1, x2),
+                  });
+                  event.preventDefault();
+                }}
+                onTouchEnd={(event: TouchEvent<HTMLDivElement>) => {
+                  if (!touchStartRef.current) return;
+                  if (event.touches.length < 2) {
+                    touchStartRef.current = null;
                   }
-                  onMouseDown={(
-                    event: { activeLabel?: number | string } | null,
-                  ) => {
-                    if (!event || event.activeLabel == null) return;
-                    const label = Number(event.activeLabel);
-                    if (!Number.isFinite(label)) return;
-                    dragStartRef.current = label;
-                    setIsDragging(true);
-                    setSelectionRange({ start: label, end: label });
-                  }}
-                  onMouseMove={(
-                    event: { activeLabel?: number | string } | null,
-                  ) => {
-                    if (!isDragging || !event || event.activeLabel == null)
-                      return;
-                    const start = dragStartRef.current;
-                    if (start == null) return;
-                    const end = Number(event.activeLabel);
-                    if (!Number.isFinite(end)) return;
-                    setSelectionRange({
-                      start: Math.min(start, end),
-                      end: Math.max(start, end),
-                    });
-                  }}
-                  onMouseUp={() => {
-                    if (!isDragging) return;
-                    setIsDragging(false);
-                    if (
-                      selectionRange &&
-                      selectionRange.end - selectionRange.start < 1
-                    ) {
-                      setSelectionRange(null);
-                    }
-                  }}
-                  onMouseLeave={() => {
-                    if (isDragging) setIsDragging(false);
-                  }}
+                }}
+                onTouchCancel={() => {
+                  touchStartRef.current = null;
+                }}
+              >
+                <ChartContainer
+                  config={chartConfig}
+                  className="h-80 w-full select-none"
                 >
-                  <CartesianGrid
-                    stroke="rgba(255,255,255,0.08)"
-                    vertical={false}
-                  />
-                  <XAxis
-                    dataKey={stitchedMode ? "x" : "distance"}
-                    type="number"
-                    domain={
-                      stitchedMode && stitched
-                        ? [0, stitched.totalX]
-                        : ["dataMin", "dataMax"]
+                  <LineChart
+                    data={visibleData}
+                    margin={
+                      isMobile
+                        ? { top: 12, right: 6, left: 6, bottom: 0 }
+                        : { top: 12, right: 18, left: 18, bottom: 0 }
                     }
-                    ticks={
-                      stitchedMode && stitched
-                        ? stitched.ticks.map((t) => t.x)
-                        : undefined
-                    }
-                    tickFormatter={
-                      stitchedMode && stitched
-                        ? (value: number) => {
-                            const tick = stitched.ticks.find(
-                              (t) => Math.abs(t.x - value) < 0.5,
-                            );
-                            return tick ? `int ${tick.label}` : "";
-                          }
-                        : (value: number) => `${(value / 1000).toFixed(2)} km`
-                    }
-                  />
-                  <YAxis
-                    yAxisId="left"
-                    hide={isMobile}
-                    reversed={chartAxisKey === "pace" || chartAxisKey === "gap"}
-                    tickFormatter={(value: number) =>
-                      chartAxisKey === "pace" || chartAxisKey === "gap"
-                        ? formatPace(value)
-                        : formatNumber(value, chartAxisKey === "ele" ? 0 : 0)
-                    }
-                    domain={["dataMin", "dataMax"]}
-                    stroke="#7dd3fc"
-                  />
-                  {chartAxisKey2 !== "off" && (
+                    onMouseDown={(
+                      event: { activeLabel?: number | string } | null,
+                    ) => {
+                      if (!event || event.activeLabel == null) return;
+                      const label = Number(event.activeLabel);
+                      if (!Number.isFinite(label)) return;
+                      dragStartRef.current = label;
+                      setIsDragging(true);
+                      setSelectionRange({ start: label, end: label });
+                    }}
+                    onMouseMove={(
+                      event: { activeLabel?: number | string } | null,
+                    ) => {
+                      if (!isDragging || !event || event.activeLabel == null)
+                        return;
+                      const start = dragStartRef.current;
+                      if (start == null) return;
+                      const end = Number(event.activeLabel);
+                      if (!Number.isFinite(end)) return;
+                      setSelectionRange({
+                        start: Math.min(start, end),
+                        end: Math.max(start, end),
+                      });
+                    }}
+                    onMouseUp={() => {
+                      if (!isDragging) return;
+                      setIsDragging(false);
+                      if (
+                        selectionRange &&
+                        selectionRange.end - selectionRange.start < 1
+                      ) {
+                        setSelectionRange(null);
+                      }
+                    }}
+                    onMouseLeave={() => {
+                      if (isDragging) setIsDragging(false);
+                    }}
+                  >
+                    <CartesianGrid
+                      stroke="var(--border)"
+                      vertical={false}
+                    />
+                    <XAxis
+                      dataKey={stitchedMode ? "x" : "distance"}
+                      type="number"
+                      domain={
+                        stitchedMode && stitched
+                          ? [0, stitched.totalX]
+                          : ["dataMin", "dataMax"]
+                      }
+                      ticks={
+                        stitchedMode && stitched
+                          ? stitched.ticks.map((t) => t.x)
+                          : undefined
+                      }
+                      tickFormatter={
+                        stitchedMode && stitched
+                          ? (value: number) => {
+                              const tick = stitched.ticks.find(
+                                (t) => Math.abs(t.x - value) < 0.5,
+                              );
+                              return tick ? `int ${tick.label}` : "";
+                            }
+                          : (value: number) => `${(value / 1000).toFixed(2)} km`
+                      }
+                    />
                     <YAxis
-                      yAxisId="right"
+                      yAxisId="left"
                       hide={isMobile}
-                      orientation="right"
                       reversed={
-                        chartAxisKey2 === "pace" || chartAxisKey2 === "gap"
+                        chartAxisKey === "pace" || chartAxisKey === "gap"
                       }
                       tickFormatter={(value: number) =>
-                        chartAxisKey2 === "pace" || chartAxisKey2 === "gap"
+                        chartAxisKey === "pace" || chartAxisKey === "gap"
                           ? formatPace(value)
-                          : formatNumber(value, chartAxisKey2 === "ele" ? 0 : 0)
+                          : formatNumber(value, chartAxisKey === "ele" ? 0 : 0)
                       }
                       domain={["dataMin", "dataMax"]}
-                      stroke="#facc15"
+                      stroke="var(--color-smoothedValue)"
                     />
-                  )}
-                  <Tooltip
-                    wrapperStyle={{
-                      backgroundColor: "rgba(7, 12, 22, 0.96)",
-                      border: "1px solid rgba(255,255,255,0.12)",
-                      color: "#e7eef8",
-                      borderRadius: "12px",
-                      padding: "0.75rem",
-                    }}
-                    contentStyle={{
-                      backgroundColor: "transparent",
-                      border: "none",
-                      boxShadow: "none",
-                    }}
-                    labelStyle={{ color: "#9bb3d8", fontSize: "0.85rem" }}
-                    itemStyle={{ color: "#e7eef8", fontSize: "0.95rem" }}
-                    labelFormatter={
-                      ((
-                        label: unknown,
-                        payload: ReadonlyArray<{
-                          payload?: {
-                            intervalIndex?: number;
-                            distance?: number;
-                          };
-                        }>,
-                      ) => {
-                        const point = payload?.[0]?.payload;
-                        if (
-                          stitchedMode &&
-                          point &&
-                          point.intervalIndex != null &&
-                          point.distance != null
-                        ) {
-                          return `int ${point.intervalIndex} · ${(point.distance / 1000).toFixed(2)} km`;
+                    {chartAxisKey2 !== "off" && (
+                      <YAxis
+                        yAxisId="right"
+                        hide={isMobile}
+                        orientation="right"
+                        reversed={
+                          chartAxisKey2 === "pace" || chartAxisKey2 === "gap"
                         }
-                        const num =
-                          typeof label === "number" ? label : Number(label);
-                        return Number.isFinite(num)
-                          ? `${(num / 1000).toFixed(2)} km`
-                          : "";
-                      }) as never
-                    }
-                    formatter={
-                      ((
-                        value: unknown,
-                        _name: unknown,
-                        item: { dataKey?: string } | undefined,
-                      ) => {
-                        const num =
-                          typeof value === "number" ? value : Number(value);
-                        if (!Number.isFinite(num)) return "--";
-                        const key =
-                          item?.dataKey === "smoothedValue2" &&
-                          chartAxisKey2 !== "off"
-                            ? (chartAxisKey2 as MetricKey)
-                            : chartAxisKey;
-                        return key === "pace" || key === "gap"
-                          ? formatPace(num)
-                          : formatNumber(num, key === "ele" ? 0 : 0);
-                      }) as never
-                    }
-                  />
-                  <Line
-                    yAxisId="left"
-                    type="monotone"
-                    dataKey="smoothedValue"
-                    name={chartMetric.label}
-                    stroke="#7dd3fc"
-                    dot={false}
-                    strokeWidth={2}
-                    isAnimationActive={false}
-                    animationDuration={0}
-                  />
-                  {chartAxisKey2 !== "off" && (
-                    <Line
-                      yAxisId="right"
-                      type="monotone"
-                      dataKey="smoothedValue2"
-                      name={
-                        metricOptions.find((o) => o.key === chartAxisKey2)
-                          ?.label ?? ""
+                        tickFormatter={(value: number) =>
+                          chartAxisKey2 === "pace" || chartAxisKey2 === "gap"
+                            ? formatPace(value)
+                            : formatNumber(
+                                value,
+                                chartAxisKey2 === "ele" ? 0 : 0,
+                              )
+                        }
+                        domain={["dataMin", "dataMax"]}
+                        stroke="var(--color-smoothedValue2)"
+                      />
+                    )}
+                    <ChartTooltip
+                      cursor={{ stroke: "rgba(255,255,255,0.2)" }}
+                      content={
+                        <ChartTooltipContent
+                          labelFormatter={
+                            ((_value: unknown, payload: ReadonlyArray<{
+                              payload?: {
+                                intervalIndex?: number;
+                                distance?: number;
+                              };
+                            }>) => {
+                              const point = payload?.[0]?.payload;
+                              if (!point) return "";
+                              if (
+                                stitchedMode &&
+                                point.intervalIndex != null &&
+                                point.distance != null
+                              ) {
+                                return `int ${point.intervalIndex} · ${(point.distance / 1000).toFixed(2)} km`;
+                              }
+                              return point.distance != null
+                                ? `${(point.distance / 1000).toFixed(2)} km`
+                                : "";
+                            }) as never
+                          }
+                          formatter={
+                            ((
+                              value: unknown,
+                              name: unknown,
+                              item: { dataKey?: string; color?: string },
+                            ) => {
+                              const num =
+                                typeof value === "number"
+                                  ? value
+                                  : Number(value);
+                              const key =
+                                item?.dataKey === "smoothedValue2" &&
+                                chartAxisKey2 !== "off"
+                                  ? (chartAxisKey2 as MetricKey)
+                                  : chartAxisKey;
+                              const text = !Number.isFinite(num)
+                                ? "--"
+                                : key === "pace" || key === "gap"
+                                  ? formatPace(num)
+                                  : formatNumber(num, 0);
+                              return (
+                                <>
+                                  <div
+                                    className="h-2.5 w-2.5 shrink-0 rounded-[2px]"
+                                    style={{ background: item?.color }}
+                                  />
+                                  <div className="flex flex-1 items-center justify-between gap-2 leading-none">
+                                    <span className="text-muted-foreground">
+                                      {name as string}
+                                    </span>
+                                    <span className="font-mono font-medium tabular-nums text-foreground">
+                                      {text}
+                                    </span>
+                                  </div>
+                                </>
+                              );
+                            }) as never
+                          }
+                        />
                       }
-                      stroke="#facc15"
+                    />
+                    <Line
+                      yAxisId="left"
+                      type="monotone"
+                      dataKey="smoothedValue"
+                      name={chartMetric.label}
+                      stroke="var(--color-smoothedValue)"
                       dot={false}
                       strokeWidth={2}
                       isAnimationActive={false}
                       animationDuration={0}
                     />
-                  )}
-                  {stitchedMode &&
-                    stitched &&
-                    stitched.boundaries.map((x) => (
-                      <ReferenceLine
-                        key={x}
-                        x={x}
-                        stroke="rgba(255,255,255,0.22)"
-                        strokeDasharray="3 3"
+                    {chartAxisKey2 !== "off" && (
+                      <Line
+                        yAxisId="right"
+                        type="monotone"
+                        dataKey="smoothedValue2"
+                        name={
+                          metricOptions.find((o) => o.key === chartAxisKey2)
+                            ?.label ?? ""
+                        }
+                        stroke="var(--color-smoothedValue2)"
+                        dot={false}
+                        strokeWidth={2}
+                        isAnimationActive={false}
+                        animationDuration={0}
                       />
-                    ))}
-                  {selectionRange && (
-                    <ReferenceArea
-                      x1={selectionRange.start}
-                      x2={selectionRange.end}
-                      stroke="rgba(59, 130, 246, 0.4)"
-                      fill="rgba(59, 130, 246, 0.12)"
-                    />
-                  )}
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
+                    )}
+                    {stitchedMode &&
+                      stitched &&
+                      stitched.boundaries.map((x) => (
+                        <ReferenceLine
+                          key={x}
+                          x={x}
+                          stroke="rgba(255,255,255,0.22)"
+                          strokeDasharray="3 3"
+                        />
+                      ))}
+                    {selectionRange && (
+                      <ReferenceArea
+                        x1={selectionRange.start}
+                        x2={selectionRange.end}
+                        stroke="rgba(59, 130, 246, 0.4)"
+                        fill="rgba(59, 130, 246, 0.12)"
+                      />
+                    )}
+                  </LineChart>
+                </ChartContainer>
+              </div>
 
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
@@ -981,7 +1009,9 @@ export default function App() {
                     <TableFooter>
                       <TableRow>
                         <TableCell>Total</TableCell>
-                        <TableCell>{formatDuration(intervalDuration)}</TableCell>
+                        <TableCell>
+                          {formatDuration(intervalDuration)}
+                        </TableCell>
                         <TableCell>
                           {formatNumber(intervalDistance / 1000, 2)} km
                         </TableCell>
