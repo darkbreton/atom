@@ -108,6 +108,18 @@ export default function App() {
     null,
   );
   const [isDragging, setIsDragging] = useState<boolean>(false);
+  const [isMobile, setIsMobile] = useState<boolean>(
+    () =>
+      typeof window !== "undefined" &&
+      window.matchMedia("(max-width: 720px)").matches,
+  );
+
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 720px)");
+    const onChange = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
 
   const loadTracksFromBuffer = async (
     bytes: ArrayBuffer,
@@ -565,7 +577,11 @@ export default function App() {
               >
                 <LineChart
                   data={visibleData}
-                  margin={{ top: 12, right: 18, left: 18, bottom: 0 }}
+                  margin={
+                    isMobile
+                      ? { top: 12, right: 6, left: 6, bottom: 0 }
+                      : { top: 12, right: 18, left: 18, bottom: 0 }
+                  }
                   onMouseDown={(
                     event: { activeLabel?: number | string } | null,
                   ) => {
@@ -634,6 +650,7 @@ export default function App() {
                   />
                   <YAxis
                     yAxisId="left"
+                    hide={isMobile}
                     reversed={chartAxisKey === "pace" || chartAxisKey === "gap"}
                     tickFormatter={(value: number) =>
                       chartAxisKey === "pace" || chartAxisKey === "gap"
@@ -646,6 +663,7 @@ export default function App() {
                   {chartAxisKey2 !== 'off' && (
                     <YAxis
                       yAxisId="right"
+                      hide={isMobile}
                       orientation="right"
                       reversed={chartAxisKey2 === 'pace' || chartAxisKey2 === 'gap'}
                       tickFormatter={(value: number) =>
