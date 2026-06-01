@@ -11,6 +11,32 @@ import {
   ReferenceArea,
   ReferenceLine,
 } from "recharts";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableFooter,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
 import {
   intervalOptions,
   metricOptions,
@@ -84,11 +110,11 @@ export default function App() {
   const [chartAxisKey, setChartAxisKey] = useState<MetricKey>(
     metricOptions[0].key,
   );
-  const [chartAxisKey2, setChartAxisKey2] = useState<MetricKey | 'off'>('off');
+  const [chartAxisKey2, setChartAxisKey2] = useState<MetricKey | "off">("off");
 
   useEffect(() => {
-    if (chartAxisKey2 !== 'off' && chartAxisKey2 === chartAxisKey) {
-      setChartAxisKey2('off');
+    if (chartAxisKey2 !== "off" && chartAxisKey2 === chartAxisKey) {
+      setChartAxisKey2("off");
     }
   }, [chartAxisKey, chartAxisKey2]);
   const [smoothingOption, setSmoothingOption] = useState<SmoothingOption>(
@@ -181,7 +207,9 @@ export default function App() {
   };
 
   const autoIntervalOption = useMemo(
-    () => intervalOptions.find((option) => option.type === 'auto') || intervalOptions[0],
+    () =>
+      intervalOptions.find((option) => option.type === "auto") ||
+      intervalOptions[0],
     [],
   );
 
@@ -195,7 +223,7 @@ export default function App() {
 
   const tableIntervalRows: IntervalRow[] = useMemo(() => {
     if (!tracks) return [];
-    if (tracks.fitLaps.length > 0 && intervalOption.type === 'auto') {
+    if (tracks.fitLaps.length > 0 && intervalOption.type === "auto") {
       return buildFitIntervals(tracks.points, tracks.segments, tracks.fitLaps);
     }
     return splitIntervals(tracks.segments, intervalOption);
@@ -211,7 +239,7 @@ export default function App() {
 
   const clampForKey = (value: number, key: MetricKey): number => {
     if (!Number.isFinite(value)) return value;
-    if (key === 'pace' || key === 'gap') {
+    if (key === "pace" || key === "gap") {
       return clamp(value, PACE_CLAMP_MIN_S, PACE_CLAMP_MAX_S);
     }
     return value;
@@ -219,16 +247,25 @@ export default function App() {
 
   const chartDataWithSmoothing: SmoothedChartPoint[] = useMemo(() => {
     if (!chartData.length) return [];
-    const primary = smoothChartData(chartData, chartAxisKey, smoothingOption.value);
+    const primary = smoothChartData(
+      chartData,
+      chartAxisKey,
+      smoothingOption.value,
+    );
     const secondary =
-      chartAxisKey2 !== 'off'
+      chartAxisKey2 !== "off"
         ? smoothChartData(chartData, chartAxisKey2, smoothingOption.value)
         : null;
     return primary.map((point, i) => ({
       ...point,
       smoothedValue: clampForKey(point.smoothedValue, chartAxisKey),
       ...(secondary
-        ? { smoothedValue2: clampForKey(secondary[i].smoothedValue, chartAxisKey2 as MetricKey) }
+        ? {
+            smoothedValue2: clampForKey(
+              secondary[i].smoothedValue,
+              chartAxisKey2 as MetricKey,
+            ),
+          }
         : {}),
     }));
   }, [chartData, chartAxisKey, chartAxisKey2, smoothingOption]);
@@ -386,8 +423,10 @@ export default function App() {
     intervalDistance > 0 ? intervalDuration / (intervalDistance / 1000) : NaN;
   const totalGap =
     intervalDistance > 0
-      ? tableIntervalRows.reduce((acc, row) => acc + row.gap * row.distance, 0) /
-        intervalDistance
+      ? tableIntervalRows.reduce(
+          (acc, row) => acc + row.gap * row.distance,
+          0,
+        ) / intervalDistance
       : NaN;
   const totalHr =
     tableIntervalRows.reduce(
@@ -429,85 +468,101 @@ export default function App() {
     : "--";
 
   return (
-    <div className="app-shell">
-      <header className="top-bar">
+    <div className="mx-auto max-w-[1080px] px-2 pb-6 sm:px-4 sm:pb-8">
+      <header className="mb-4 flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <p className="eyebrow">GPX + FIT interval analysis</p>
-          <h1>Condensed running analysis</h1>
+          <p className="mb-1.5 text-xs uppercase tracking-[0.16em] text-muted-foreground">
+            GPX + FIT interval analysis
+          </p>
+          <h1 className="text-[clamp(1.6rem,3vw,2.4rem)] font-semibold leading-tight">
+            Condensed running analysis
+          </h1>
         </div>
-        <div className="chip">Mobile-friendly</div>
+        <Badge variant="secondary">Mobile-friendly</Badge>
       </header>
 
       {tracks ? (
         <>
-          <section className="card">
-            <div className="section-header">
-              <div>
-                <h2>Dynamic chart</h2>
-                <p>
-                  Pick a metric, drag on the chart to select, then press Enter
-                  to zoom.
-                </p>
-              </div>
-              <div className="chart-controls">
-                <div className="select-wrap">
-                  <label htmlFor="chart-axis">Y axis</label>
-                  <select
-                    id="chart-axis"
+          <Card className="mb-4">
+            <CardHeader>
+              <CardTitle className="text-base">Dynamic chart</CardTitle>
+              <CardDescription>
+                Pick a metric, drag on the chart to select, then press Enter to
+                zoom.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-4">
+              <div className="flex flex-wrap items-end gap-3">
+                <div className="grid gap-1.5">
+                  <Label htmlFor="chart-axis">Y axis</Label>
+                  <Select
                     value={chartAxisKey}
-                    onChange={(event) =>
-                      setChartAxisKey(event.target.value as MetricKey)
+                    onValueChange={(value) =>
+                      setChartAxisKey(value as MetricKey)
                     }
                   >
-                    {metricOptions.map((option) => (
-                      <option key={option.key} value={option.key}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="select-wrap">
-                  <label htmlFor="chart-axis-2">Y2 (right)</label>
-                  <select
-                    id="chart-axis-2"
-                    value={chartAxisKey2}
-                    onChange={(event) =>
-                      setChartAxisKey2(event.target.value as MetricKey | 'off')
-                    }
-                  >
-                    <option value="off">Off</option>
-                    {metricOptions
-                      .filter((option) => option.key !== chartAxisKey)
-                      .map((option) => (
-                        <option key={option.key} value={option.key}>
+                    <SelectTrigger id="chart-axis" className="min-w-32">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {metricOptions.map((option) => (
+                        <SelectItem key={option.key} value={option.key}>
                           {option.label}
-                        </option>
+                        </SelectItem>
                       ))}
-                  </select>
+                    </SelectContent>
+                  </Select>
                 </div>
-                <div className="select-wrap">
-                  <label htmlFor="smoothing">Smoothing</label>
-                  <select
-                    id="smoothing"
+                <div className="grid gap-1.5">
+                  <Label htmlFor="chart-axis-2">Y2 (right)</Label>
+                  <Select
+                    value={chartAxisKey2}
+                    onValueChange={(value) =>
+                      setChartAxisKey2(value as MetricKey | "off")
+                    }
+                  >
+                    <SelectTrigger id="chart-axis-2" className="min-w-32">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="off">Off</SelectItem>
+                      {metricOptions
+                        .filter((option) => option.key !== chartAxisKey)
+                        .map((option) => (
+                          <SelectItem key={option.key} value={option.key}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-1.5">
+                  <Label htmlFor="smoothing">Smoothing</Label>
+                  <Select
                     value={smoothingOption.label}
-                    onChange={(event) =>
+                    onValueChange={(value) =>
                       setSmoothingOption(
                         smoothingOptions.find(
-                          (option) => option.label === event.target.value,
+                          (option) => option.label === value,
                         ) || smoothingOptions[0],
                       )
                     }
                   >
-                    {smoothingOptions.map((option) => (
-                      <option key={option.label} value={option.label}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
+                    <SelectTrigger id="smoothing" className="min-w-32">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {smoothingOptions.map((option) => (
+                        <SelectItem key={option.label} value={option.label}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
-                <button
+                <Button
                   type="button"
-                  className="clear-button"
+                  variant="outline"
                   onClick={() => {
                     setSelectedIntervalIndices([]);
                     setLastClickedIntervalIndex(null);
@@ -516,25 +571,20 @@ export default function App() {
                   }}
                 >
                   Reset zoom
-                </button>
-                <button
-                  type="button"
-                  className="clear-button"
-                  onClick={clearSelection}
-                >
+                </Button>
+                <Button type="button" variant="outline" onClick={clearSelection}>
                   Clear selection
-                </button>
+                </Button>
               </div>
-            </div>
 
-            <div className="chart-summary">
-              <div>Visible {visibleRangeLabel}</div>
-              {selectionRange && <div>Selection: {selectionLabel}</div>}
-            </div>
+              <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
+                <div>Visible {visibleRangeLabel}</div>
+                {selectionRange && <div>Selection: {selectionLabel}</div>}
+              </div>
 
-            <div
-              className="chart-panel"
-              ref={chartRef}
+              <div
+                className="overflow-hidden rounded-md bg-[rgba(11,16,32,0.95)] ring-1 ring-foreground/10 [touch-action:pan-y]"
+                ref={chartRef}
               onDoubleClick={handleChartDoubleClick}
               onTouchStart={(event: TouchEvent<HTMLDivElement>) => {
                 if (event.touches.length !== 2) return;
@@ -660,18 +710,20 @@ export default function App() {
                     domain={["dataMin", "dataMax"]}
                     stroke="#7dd3fc"
                   />
-                  {chartAxisKey2 !== 'off' && (
+                  {chartAxisKey2 !== "off" && (
                     <YAxis
                       yAxisId="right"
                       hide={isMobile}
                       orientation="right"
-                      reversed={chartAxisKey2 === 'pace' || chartAxisKey2 === 'gap'}
-                      tickFormatter={(value: number) =>
-                        chartAxisKey2 === 'pace' || chartAxisKey2 === 'gap'
-                          ? formatPace(value)
-                          : formatNumber(value, chartAxisKey2 === 'ele' ? 0 : 0)
+                      reversed={
+                        chartAxisKey2 === "pace" || chartAxisKey2 === "gap"
                       }
-                      domain={['dataMin', 'dataMax']}
+                      tickFormatter={(value: number) =>
+                        chartAxisKey2 === "pace" || chartAxisKey2 === "gap"
+                          ? formatPace(value)
+                          : formatNumber(value, chartAxisKey2 === "ele" ? 0 : 0)
+                      }
+                      domain={["dataMin", "dataMax"]}
                       stroke="#facc15"
                     />
                   )}
@@ -747,13 +799,14 @@ export default function App() {
                     isAnimationActive={false}
                     animationDuration={0}
                   />
-                  {chartAxisKey2 !== 'off' && (
+                  {chartAxisKey2 !== "off" && (
                     <Line
                       yAxisId="right"
                       type="monotone"
                       dataKey="smoothedValue2"
                       name={
-                        metricOptions.find((o) => o.key === chartAxisKey2)?.label ?? ''
+                        metricOptions.find((o) => o.key === chartAxisKey2)
+                          ?.label ?? ""
                       }
                       stroke="#facc15"
                       dot={false}
@@ -784,46 +837,52 @@ export default function App() {
               </ResponsiveContainer>
             </div>
 
-            <div className="stats-row">
-              <div>
-                <div className="stat-label">Visible values</div>
-                <div className="stat-value">
-                  {visibleStatsText} {chartMetric.unit}
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <div className="mb-1 text-xs text-muted-foreground">
+                    Visible values
+                  </div>
+                  <div className="text-base font-semibold tabular-nums">
+                    {visibleStatsText} {chartMetric.unit}
+                  </div>
+                </div>
+                <div>
+                  <div className="mb-1 text-xs text-muted-foreground">
+                    Selected values
+                  </div>
+                  <div className="text-base font-semibold tabular-nums">
+                    {selectionStatsText} {chartMetric.unit}
+                  </div>
                 </div>
               </div>
-              <div>
-                <div className="stat-label">Selected values</div>
-                <div className="stat-value">
-                  {selectionStatsText} {chartMetric.unit}
-                </div>
-              </div>
-            </div>
 
-            <div className="chart-note">
-              Drag on the chart (or two-finger drag on mobile) to measure a
-              window. Press Enter to zoom into it.
-            </div>
-            <div>
-              <h2>Intervals</h2>
-              <p>
-                Click an interval to zoom the chart. Shift-click to extend;
-                Cmd/Ctrl-click to toggle.
+              <p className="text-sm text-muted-foreground">
+                Drag on the chart (or two-finger drag on mobile) to measure a
+                window. Press Enter to zoom into it.
               </p>
-            </div>
-            <div className="chart-controls">
+
+              <div>
+                <h2 className="text-base font-semibold">Intervals</h2>
+                <p className="text-sm text-muted-foreground">
+                  Click an interval to zoom the chart. Shift-click to extend;
+                  Cmd/Ctrl-click to toggle.
+                </p>
+              </div>
               {chartIntervalRows.length > 0 && (
                 <div
-                  className="interval-pills"
+                  className="flex flex-wrap gap-2 overflow-x-auto"
                   role="group"
                   aria-label="Intervals"
                 >
                   {chartIntervalRows.map((row, idx) => {
                     const selected = selectedIntervalIndices.includes(idx);
                     return (
-                      <button
+                      <Button
                         key={idx}
                         type="button"
-                        className={`interval-pill${selected ? " is-selected" : ""}`}
+                        variant={selected ? "default" : "outline"}
+                        size="sm"
+                        className="min-w-10 tabular-nums"
                         aria-pressed={selected}
                         onClick={(event) => {
                           const { nextIndices, nextAnchor } = resolvePillClick(
@@ -840,86 +899,95 @@ export default function App() {
                         }}
                       >
                         {row.index}
-                      </button>
+                      </Button>
                     );
                   })}
                 </div>
               )}
-            </div>
-          </section>
+            </CardContent>
+          </Card>
 
-          <section className="card">
-            <div className="section-header">
-              <div>
-                <h2>Table</h2>
-              </div>
-              <div className="chart-controls">
-                <button
+          <Card className="mb-4">
+            <CardHeader>
+              <div className="flex items-center justify-between gap-4">
+                <CardTitle className="text-base">Table</CardTitle>
+                <Button
                   type="button"
-                  className="clear-button"
+                  variant="outline"
+                  size="sm"
                   onClick={() => setShowTable((prev) => !prev)}
                 >
                   {showTable ? "Hide table" : "Show table"}
-                </button>
+                </Button>
               </div>
-            </div>
+            </CardHeader>
 
             {showTable ? (
-              <div className="chart-controls">
-                <div className="select-wrap">
-                  <label htmlFor="interval">Mode</label>
-                  <select
-                    id="interval"
+              <CardContent className="flex flex-col gap-4">
+                <div className="grid gap-1.5">
+                  <Label htmlFor="interval">Mode</Label>
+                  <Select
                     value={intervalOption.label}
-                    onChange={(event) =>
+                    onValueChange={(value) =>
                       setIntervalOption(
                         intervalOptions.find(
-                          (option) => option.label === event.target.value,
+                          (option) => option.label === value,
                         ) || intervalOptions[0],
                       )
                     }
                   >
-                    {intervalOptions.map((option) => (
-                      <option key={option.label} value={option.label}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Interval</th>
-                        <th>Duration</th>
-                        <th>Distance</th>
-                        <th>Pace</th>
-                        <th>GAP</th>
-                        <th>Gain</th>
-                        <th>Avg HR</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {tableIntervalRows.map((row) => (
-                        <tr key={row.index}>
-                          <td>{row.index}</td>
-                          <td>{formatDuration(row.duration)}</td>
-                          <td>{formatNumber(row.distance / 1000, 2)} km</td>
-                          <td>{formatPace(row.pace)}</td>
-                          <td>{formatPace(row.gap)}</td>
-                          <td>{formatNumber(row.elevationGain, 1)} m</td>
-                          <td>{formatNumber(row.avgHr, 0)}</td>
-                        </tr>
+                    <SelectTrigger id="interval" className="min-w-40">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {intervalOptions.map((option) => (
+                        <SelectItem key={option.label} value={option.label}>
+                          {option.label}
+                        </SelectItem>
                       ))}
-                    </tbody>
-                    <tfoot>
-                      <tr>
-                        <td>Total</td>
-                        <td>{formatDuration(intervalDuration)}</td>
-                        <td>{formatNumber(intervalDistance / 1000, 2)} km</td>
-                        <td>{formatPace(totalPace)}</td>
-                        <td>{formatPace(totalGap)}</td>
-                        <td>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="overflow-x-auto">
+                  <Table className="min-w-[900px]">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Interval</TableHead>
+                        <TableHead>Duration</TableHead>
+                        <TableHead>Distance</TableHead>
+                        <TableHead>Pace</TableHead>
+                        <TableHead>GAP</TableHead>
+                        <TableHead>Gain</TableHead>
+                        <TableHead>Avg HR</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {tableIntervalRows.map((row) => (
+                        <TableRow key={row.index}>
+                          <TableCell>{row.index}</TableCell>
+                          <TableCell>{formatDuration(row.duration)}</TableCell>
+                          <TableCell>
+                            {formatNumber(row.distance / 1000, 2)} km
+                          </TableCell>
+                          <TableCell>{formatPace(row.pace)}</TableCell>
+                          <TableCell>{formatPace(row.gap)}</TableCell>
+                          <TableCell>
+                            {formatNumber(row.elevationGain, 1)} m
+                          </TableCell>
+                          <TableCell>{formatNumber(row.avgHr, 0)}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                    <TableFooter>
+                      <TableRow>
+                        <TableCell>Total</TableCell>
+                        <TableCell>{formatDuration(intervalDuration)}</TableCell>
+                        <TableCell>
+                          {formatNumber(intervalDistance / 1000, 2)} km
+                        </TableCell>
+                        <TableCell>{formatPace(totalPace)}</TableCell>
+                        <TableCell>{formatPace(totalGap)}</TableCell>
+                        <TableCell>
                           {formatNumber(
                             tableIntervalRows.reduce(
                               (acc, row) => acc + row.elevationGain,
@@ -928,144 +996,168 @@ export default function App() {
                             1,
                           )}{" "}
                           m
-                        </td>
-                        <td>{formatNumber(totalHr, 0)}</td>
-                      </tr>
-                    </tfoot>
-                  </table>
+                        </TableCell>
+                        <TableCell>{formatNumber(totalHr, 0)}</TableCell>
+                      </TableRow>
+                    </TableFooter>
+                  </Table>
                 </div>
-              </div>
+              </CardContent>
             ) : null}
-          </section>
+          </Card>
         </>
       ) : null}
 
-      <section className="card">
-        <div className="section-header">
-          <div>
-            <h2>Upload track</h2>
-            <p>Pull a recent run from Google Drive, or drop a GPX/FIT file.</p>
-          </div>
-        </div>
-
-        <div className="drive-source">
-          <div className="drive-header">
-            <div>
-              <div className="drive-title">Google Drive</div>
-              {!drive.configured && (
-                <div className="drive-hint">
-                  Drive disabled — set VITE_GOOGLE_* in .env.local
-                </div>
+      <Card className="mb-4">
+        <CardHeader>
+          <CardTitle className="text-base">Upload track</CardTitle>
+          <CardDescription>
+            Pull a recent run from Google Drive, or drop a GPX/FIT file.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="rounded-md bg-background/40 p-4 ring-1 ring-foreground/10">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <div className="font-semibold">Google Drive</div>
+                {!drive.configured && (
+                  <div className="text-sm text-muted-foreground">
+                    Drive disabled — set VITE_GOOGLE_* in .env.local
+                  </div>
+                )}
+              </div>
+              {drive.configured && drive.token && (
+                <Button type="button" variant="outline" onClick={drive.signOut}>
+                  Sign out
+                </Button>
               )}
             </div>
-            {drive.configured && drive.token && (
-              <button
+
+            {drive.configured && !drive.token && (
+              <Button
                 type="button"
-                className="clear-button"
-                onClick={drive.signOut}
+                variant="outline"
+                className="w-full"
+                onClick={drive.signIn}
+                disabled={drive.status === "signing-in"}
               >
-                Sign out
-              </button>
+                {drive.status === "signing-in"
+                  ? "Signing in…"
+                  : "Sign in with Google"}
+              </Button>
+            )}
+
+            {drive.configured &&
+              drive.token &&
+              drive.files.length === 0 &&
+              drive.status === "listing" && (
+                <div className="text-sm text-muted-foreground">
+                  Loading files…
+                </div>
+              )}
+
+            {drive.configured &&
+              drive.token &&
+              drive.status === "ready" &&
+              drive.files.length === 0 && (
+                <div className="text-sm text-muted-foreground">
+                  No FIT files in this folder yet.
+                </div>
+              )}
+
+            {drive.configured && drive.token && drive.files.length > 0 && (
+              <>
+                <div className="text-sm text-muted-foreground">
+                  {drive.status === "listing"
+                    ? `Loading more… (${drive.files.length})`
+                    : `${drive.files.length} files`}
+                </div>
+                <ul className="mt-2 flex max-h-[420px] list-none flex-col gap-1.5 overflow-y-auto p-0">
+                  {drive.files.map((file) => {
+                    const isCurrent = tracks?.fileName === file.name;
+                    const isLoading = drive.loadingId === file.id;
+                    return (
+                      <li
+                        key={file.id}
+                        className={`flex items-center justify-between gap-3 rounded-md px-3 py-2 ring-1 ${
+                          isCurrent
+                            ? "bg-primary/10 ring-primary/50"
+                            : "bg-card/70 ring-foreground/5"
+                        }`}
+                      >
+                        <div className="min-w-0">
+                          <div className="truncate text-sm">{file.name}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {new Date(file.modifiedTime).toLocaleString()}
+                          </div>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="shrink-0"
+                          onClick={() => drive.loadFile(file)}
+                          disabled={isLoading}
+                        >
+                          {isLoading
+                            ? "Loading…"
+                            : isCurrent
+                              ? "Reload"
+                              : "Load"}
+                        </Button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </>
+            )}
+
+            {drive.error && (
+              <div className="mt-3 rounded-md border border-red-500/25 bg-red-500/15 px-4 py-3 text-sm text-red-200">
+                {drive.error}
+              </div>
             )}
           </div>
 
-          {drive.configured && !drive.token && (
-            <button
-              type="button"
-              className="clear-button drive-signin"
-              onClick={drive.signIn}
-              disabled={drive.status === "signing-in"}
+          <div className="my-3 flex items-center gap-3 text-xs uppercase tracking-[0.12em] text-muted-foreground before:h-px before:flex-1 before:bg-border after:h-px after:flex-1 after:bg-border">
+            <span>or</span>
+          </div>
+
+          <div
+            className="relative flex min-h-40 items-center justify-center rounded-md border-2 border-dashed border-primary/35 bg-background/40 p-7 text-center"
+            onDragOver={(event: DragEvent<HTMLDivElement>) =>
+              event.preventDefault()
+            }
+            onDrop={(event: DragEvent<HTMLDivElement>) => {
+              event.preventDefault();
+              const file = event.dataTransfer.files?.[0];
+              if (file) void handleFile(file);
+            }}
+          >
+            <label
+              htmlFor="track-file"
+              className="block w-full cursor-pointer font-semibold"
             >
-              {drive.status === "signing-in"
-                ? "Signing in…"
-                : "Sign in with Google"}
-            </button>
+              {tracks
+                ? "Fichier chargé : " + tracks.fileName
+                : "Choisissez un GPX/.FIT ou glissez-le ici"}
+            </label>
+            <input
+              id="track-file"
+              type="file"
+              accept=".gpx,.fit"
+              onChange={handleFileChange}
+              className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+            />
+          </div>
+
+          {error && (
+            <div className="mt-3 rounded-md border border-red-500/25 bg-red-500/15 px-4 py-3 text-sm text-red-200">
+              {error}
+            </div>
           )}
-
-          {drive.configured &&
-            drive.token &&
-            drive.files.length === 0 &&
-            drive.status === "listing" && (
-              <div className="drive-hint">Loading files…</div>
-            )}
-
-          {drive.configured &&
-            drive.token &&
-            drive.status === "ready" &&
-            drive.files.length === 0 && (
-              <div className="drive-hint">No FIT files in this folder yet.</div>
-            )}
-
-          {drive.configured && drive.token && drive.files.length > 0 && (
-            <>
-              <div className="drive-hint">
-                {drive.status === "listing"
-                  ? `Loading more… (${drive.files.length})`
-                  : `${drive.files.length} files`}
-              </div>
-              <ul className="drive-list">
-                {drive.files.map((file) => {
-                  const isCurrent = tracks?.fileName === file.name;
-                  const isLoading = drive.loadingId === file.id;
-                  return (
-                    <li
-                      key={file.id}
-                      className={`drive-row${isCurrent ? " is-current" : ""}`}
-                    >
-                      <div className="drive-row-meta">
-                        <div className="drive-row-name">{file.name}</div>
-                        <div className="drive-row-date">
-                          {new Date(file.modifiedTime).toLocaleString()}
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        className="clear-button drive-row-load"
-                        onClick={() => drive.loadFile(file)}
-                        disabled={isLoading}
-                      >
-                        {isLoading ? "Loading…" : isCurrent ? "Reload" : "Load"}
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            </>
-          )}
-
-          {drive.error && <div className="error-banner">{drive.error}</div>}
-        </div>
-
-        <div className="drive-divider">
-          <span>or</span>
-        </div>
-
-        <div
-          className="dropzone"
-          onDragOver={(event: DragEvent<HTMLDivElement>) =>
-            event.preventDefault()
-          }
-          onDrop={(event: DragEvent<HTMLDivElement>) => {
-            event.preventDefault();
-            const file = event.dataTransfer.files?.[0];
-            if (file) void handleFile(file);
-          }}
-        >
-          <label htmlFor="track-file" className="drop-label">
-            {tracks
-              ? "Fichier chargé : " + tracks.fileName
-              : "Choisissez un GPX/.FIT ou glissez-le ici"}
-          </label>
-          <input
-            id="track-file"
-            type="file"
-            accept=".gpx,.fit"
-            onChange={handleFileChange}
-          />
-        </div>
-
-        {error && <div className="error-banner">{error}</div>}
-      </section>
+        </CardContent>
+      </Card>
     </div>
   );
 }
