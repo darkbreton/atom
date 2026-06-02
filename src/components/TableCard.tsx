@@ -22,22 +22,31 @@ import {
   formatDuration,
   formatNumber,
   formatPace,
+  buildFitIntervals,
+  splitIntervals,
 } from "@/lib/trackUtils";
-import type { IntervalOption, IntervalRow } from "@/lib/trackUtils";
-import { useState } from "react";
+import type { IntervalOption, IntervalRow, Tracks } from "@/lib/trackUtils";
+import { useMemo, useState } from "react";
 
 interface TableCardProps {
-  intervalOption: IntervalOption;
-  onIntervalOptionChange: (option: IntervalOption) => void;
-  rows: IntervalRow[];
+  tracks: Tracks;
 }
 
-export function TableCard({
-  intervalOption,
-  onIntervalOptionChange,
-  rows,
-}: TableCardProps) {
-  const [showTable, setShowTable] = useState(true);
+export function TableCard({ tracks }: TableCardProps) {
+  const [showTable, setShowTable] = useState(false);
+  const [intervalOption, setIntervalOption] = useState<IntervalOption>(
+    intervalOptions.find((option) => option.type === "laps") ||
+      intervalOptions[0],
+  );
+
+  const rows: IntervalRow[] = useMemo(() => {
+    if (!tracks) return [];
+    if (tracks.fitLaps.length > 0 && intervalOption.type === "laps") {
+      return buildFitIntervals(tracks.points, tracks.segments, tracks.fitLaps);
+    }
+    return splitIntervals(tracks.segments, intervalOption);
+  }, [tracks, intervalOption]);
+
   const intervalDistance = rows.reduce((acc, row) => acc + row.distance, 0);
   const intervalDuration = rows.reduce((acc, row) => acc + row.duration, 0);
   const totalPace =
@@ -84,7 +93,7 @@ export function TableCard({
             <Select
               value={intervalOption.label}
               onValueChange={(value) =>
-                onIntervalOptionChange(
+                setIntervalOption(
                   intervalOptions.find((option) => option.label === value) ||
                     intervalOptions[0],
                 )

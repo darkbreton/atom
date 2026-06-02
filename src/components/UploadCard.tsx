@@ -26,7 +26,7 @@ export function UploadCard({ drive, tracks, error, onFile }: UploadCardProps) {
   return (
     <Card className="mb-4">
       <CardHeader>
-        <CardTitle className="text-base">Upload track</CardTitle>
+        <CardTitle className="text-base">Upload Training</CardTitle>
         <CardDescription>
           Pull a recent run from Google Drive, or drop a GPX/FIT file.
         </CardDescription>

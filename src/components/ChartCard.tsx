@@ -1,8 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type {
-  PointerEvent as ReactPointerEvent,
-  TouchEvent,
-} from "react";
+import type { PointerEvent as ReactPointerEvent, TouchEvent } from "react";
 import {
   LineChart,
   Line,
@@ -41,24 +38,24 @@ import {
   formatPace,
   formatNumber,
   buildFitIntervals,
-  buildChartData,
-  smoothChartData,
+  buildSmoothedChartData,
   computeStats,
+  rangeStats,
   clamp,
   resolvePillClick,
   buildStitchedData,
 } from "@/lib/trackUtils";
 import type {
-  ChartPoint,
   IntervalRow,
   MetricKey,
   MetricOption,
   SmoothedChartPoint,
+  SmoothedStatPoint,
   Tracks,
 } from "@/lib/trackUtils";
 
-const PACE_CLAMP_MIN_S = 150;
-const PACE_CLAMP_MAX_S = 480;
+// Above this (60:00/km) a pace/gap stat is shown as "n/a" rather than a number.
+const PACE_NA_THRESHOLD = 3600;
 
 interface SmoothingOption {
   label: string;
@@ -76,10 +73,6 @@ const smoothingOptions: SmoothingOption[] = [
 interface Range {
   start: number;
   end: number;
-}
-
-interface ChartPointWithFormatted extends ChartPoint {
-  formattedDistance: string;
 }
 
 interface ChartCardProps {
@@ -193,45 +186,17 @@ export function ChartCard({ tracks }: ChartCardProps) {
     return [];
   }, [tracks]);
 
-  const chartData: ChartPointWithFormatted[] = useMemo(() => {
-    return buildChartData(tracks.points, tracks.segments).map((point) => ({
-      ...point,
-      formattedDistance: formatDistance(point.distance),
-    }));
-  }, [tracks]);
-
-  const clampForKey = (value: number, key: MetricKey): number => {
-    if (!Number.isFinite(value)) return value;
-    if (key === "pace" || key === "gap") {
-      return clamp(value, PACE_CLAMP_MIN_S, PACE_CLAMP_MAX_S);
-    }
-    return value;
-  };
-
-  const chartDataWithSmoothing: SmoothedChartPoint[] = useMemo(() => {
-    if (!chartData.length) return [];
-    const primary = smoothChartData(
-      chartData,
-      chartAxisKey,
-      smoothingOption.value,
-    );
-    const secondary =
-      chartAxisKey2 !== "off"
-        ? smoothChartData(chartData, chartAxisKey2, smoothingOption.value)
-        : null;
-    return primary.map((point, i) => ({
-      ...point,
-      smoothedValue: clampForKey(point.smoothedValue, chartAxisKey),
-      ...(secondary
-        ? {
-            smoothedValue2: clampForKey(
-              secondary[i].smoothedValue,
-              chartAxisKey2 as MetricKey,
-            ),
-          }
-        : {}),
-    }));
-  }, [chartData, chartAxisKey, chartAxisKey2, smoothingOption]);
+  const chartDataWithSmoothing: SmoothedStatPoint[] = useMemo(
+    () =>
+      buildSmoothedChartData(
+        tracks.points,
+        tracks.segments,
+        chartAxisKey,
+        chartAxisKey2,
+        smoothingOption.value,
+      ),
+    [tracks, chartAxisKey, chartAxisKey2, smoothingOption],
+  );
 
   const stitchedMode = selectedIntervalIndices.length >= 2;
 
@@ -255,7 +220,10 @@ export function ChartCard({ tracks }: ChartCardProps) {
 
   useEffect(() => {
     if (!selectionRange || !totalDistance) return;
-    const step = Math.max(3, (selectionRange.end - selectionRange.start) * 0.05);
+    const step = Math.max(
+      3,
+      (selectionRange.end - selectionRange.start) * 0.05,
+    );
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
         event.preventDefault();
@@ -310,20 +278,43 @@ export function ChartCard({ tracks }: ChartCardProps) {
     );
   }, [stitchedMode, stitched, chartDataWithSmoothing, zoomWindow]);
 
-  const visibleStats = useMemo(
-    () => computeStats(visibleData, "smoothedValue"),
-    [visibleData],
-  );
+  const toStatPoints = (points: SmoothedStatPoint[]) =>
+    points.map((p) => ({ distance: p.distance, value: p.rawValue }));
+
+  const visibleStats = useMemo(() => {
+    // Stitched mode concatenates non-contiguous segments, so fall back to a
+    // simple point mean there; the normal view uses the metric-aware average.
+    if (stitchedMode) return computeStats(visibleData, "rawValue");
+    return rangeStats(
+      toStatPoints(
+        chartDataWithSmoothing.filter(
+          (point) =>
+            point.distance >= zoomWindow[0] && point.distance <= zoomWindow[1],
+        ),
+      ),
+      chartAxisKey,
+    );
+  }, [
+    stitchedMode,
+    visibleData,
+    chartDataWithSmoothing,
+    zoomWindow,
+    chartAxisKey,
+  ]);
 
   const selectionStats = useMemo(() => {
     if (!selectionRange) return null;
-    const selected = chartDataWithSmoothing.filter(
-      (point) =>
-        point.distance >= selectionRange.start &&
-        point.distance <= selectionRange.end,
+    return rangeStats(
+      toStatPoints(
+        chartDataWithSmoothing.filter(
+          (point) =>
+            point.distance >= selectionRange.start &&
+            point.distance <= selectionRange.end,
+        ),
+      ),
+      chartAxisKey,
     );
-    return computeStats(selected, "smoothedValue");
-  }, [chartDataWithSmoothing, selectionRange]);
+  }, [chartDataWithSmoothing, selectionRange, chartAxisKey]);
 
   const touchToChartX = (clientX: number): number | null => {
     if (!chartRef.current) return null;
@@ -353,7 +344,14 @@ export function ChartCard({ tracks }: ChartCardProps) {
   useEffect(() => {
     const id = requestAnimationFrame(() => measurePlot());
     return () => cancelAnimationFrame(id);
-  }, [visibleData, zoomWindow, isMobile, chartAxisKey, chartAxisKey2, measurePlot]);
+  }, [
+    visibleData,
+    zoomWindow,
+    isMobile,
+    chartAxisKey,
+    chartAxisKey2,
+    measurePlot,
+  ]);
 
   // Drag the whole selection (move) or its edges (left/right handles).
   const beginSelDrag =
@@ -412,8 +410,6 @@ export function ChartCard({ tracks }: ChartCardProps) {
     selDragRef.current = null;
   };
 
-  const clearSelection = (): void => setSelectionRange(null);
-
   const chartMetric: MetricOption =
     metricOptions.find((option) => option.key === chartAxisKey) ||
     metricOptions[0];
@@ -438,17 +434,27 @@ export function ChartCard({ tracks }: ChartCardProps) {
         2,
       )}km (start at ${formatDistance(selectionRange.start)})`
     : null;
-  const visibleStatsText = visibleStats
-    ? `${formatMetric(visibleStats.min, chartAxisKey)} / ${formatMetric(
-        visibleStats.avg,
-        chartAxisKey,
-      )} / ${formatMetric(visibleStats.max, chartAxisKey)}`
-    : "--";
-  const selectionStatsText = selectionStats
-    ? `${formatMetric(selectionStats.min, chartAxisKey)} / ${formatMetric(
-        selectionStats.avg,
-        chartAxisKey,
-      )} / ${formatMetric(selectionStats.max, chartAxisKey)}`
+  // Use the selection's stats when it contains values, otherwise the visible
+  // range's stats.
+  const activeStats = selectionStats ?? visibleStats;
+  const activeStatsLabel = selectionStats
+    ? "Selected values"
+    : "Visible values";
+  // Format a stat value; for pace/gap a non-finite or absurdly large value
+  // (e.g. from a long stop) is shown as "n/a" rather than a misleading number.
+  const formatStat = (value: number): string => {
+    if (
+      (chartAxisKey === "pace" || chartAxisKey === "gap") &&
+      (!Number.isFinite(value) || value >= PACE_NA_THRESHOLD)
+    ) {
+      return "n/a";
+    }
+    return formatMetric(value, chartAxisKey);
+  };
+  const activeStatsText = activeStats
+    ? `${formatStat(activeStats.min)} / ${formatStat(
+        activeStats.avg,
+      )} / ${formatStat(activeStats.max)}`
     : "--";
 
   return (
@@ -537,9 +543,6 @@ export function ChartCard({ tracks }: ChartCardProps) {
           >
             Reset zoom
           </Button>
-          <Button type="button" variant="outline" onClick={clearSelection}>
-            Clear selection
-          </Button>
         </div>
 
         <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
@@ -583,7 +586,10 @@ export function ChartCard({ tracks }: ChartCardProps) {
             touchStartRef.current = null;
           }}
         >
-          <ChartContainer config={chartConfig} className="h-80 w-full select-none">
+          <ChartContainer
+            config={chartConfig}
+            className="h-80 w-full select-none"
+          >
             <LineChart
               data={visibleData}
               margin={{ top: 12, bottom: 0 }}
@@ -725,7 +731,7 @@ export function ChartCard({ tracks }: ChartCardProps) {
                         return (
                           <>
                             <div
-                              className="h-2.5 w-2.5 shrink-0 rounded-[2px]"
+                              className="h-2.5 w-2.5 shrink-0 rounded-xs"
                               style={{ background: item?.color }}
                             />
                             <div className="flex flex-1 items-center justify-between gap-2 leading-none">
@@ -851,28 +857,19 @@ export function ChartCard({ tracks }: ChartCardProps) {
             })()}
         </div>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div>
-            <div className="mb-1 text-xs text-muted-foreground">
-              Visible values
-            </div>
-            <div className="text-base font-semibold tabular-nums">
-              {visibleStatsText} {chartMetric.unit}
-            </div>
+        <div>
+          <div className="mb-1 text-xs text-muted-foreground">
+            {activeStatsLabel}
           </div>
-          <div>
-            <div className="mb-1 text-xs text-muted-foreground">
-              Selected values
-            </div>
-            <div className="text-base font-semibold tabular-nums">
-              {selectionStatsText} {chartMetric.unit}
-            </div>
+          <div className="text-base font-semibold tabular-nums">
+            {activeStatsText} {chartMetric.unit}
           </div>
         </div>
 
         <p className="text-sm text-muted-foreground">
-          Drag on the chart (or two-finger drag on mobile) to measure a window.
-          Press Enter to zoom into it.
+          {isMobile
+            ? "Drag on the chart (or two-finger drag on mobile) to measure a window."
+            : "Press Enter to zoom into it."}
         </p>
 
         {chartIntervalRows.length > 0 && (
@@ -880,8 +877,10 @@ export function ChartCard({ tracks }: ChartCardProps) {
             <div>
               <h2 className="text-base font-semibold">Laps</h2>
               <p className="text-sm text-muted-foreground">
-                Click a lap to zoom the chart. Shift-click to extend;
-                Cmd/Ctrl-click to toggle.
+                Click a lap to zoom the chart.
+                {!isMobile && (
+                  <>Shift-click to extend; Cmd/Ctrl-click to toggle.</>
+                )}
               </p>
             </div>
             <div

@@ -1,6 +1,6 @@
 import FitParser from "fit-file-parser";
 
-export type IntervalType = "distance" | "duration" | "auto";
+export type IntervalType = "distance" | "duration" | "laps";
 
 export interface IntervalOption {
   label: string;
@@ -22,8 +22,7 @@ export const intervalOptions: IntervalOption[] = [
   { label: "10s", type: "duration", value: 10 },
   { label: "30s", type: "duration", value: 30 },
   { label: "1 min", type: "duration", value: 60 },
-  { label: "5 min", type: "duration", value: 300 },
-  { label: "FIT laps / Auto", type: "auto", value: null },
+  { label: "FIT laps", type: "laps", value: null },
 ];
 
 export const metricOptions: MetricOption[] = [
@@ -455,87 +454,21 @@ const splitFixedIntervals = (
   return intervals;
 };
 
-const detectAutoIntervals = (segments: Segment[]): IntervalRow[] => {
-  const paceValues = segments.map((s) => s.pace).filter(Number.isFinite);
-  if (paceValues.length === 0) {
-    return splitFixedIntervals(segments, intervalOptions[0]);
-  }
-
-  const sorted = [...paceValues].sort((a, b) => a - b);
-  const median = sorted[Math.floor(sorted.length / 2)];
-  const workThreshold = median * 0.9;
-  const recoveryThreshold = median * 1.08;
-
-  const intervals: IntervalRow[] = [];
-  let current = createInterval();
-  let currentStartEle: number | null = null;
-  let lastEndEle: number | null = null;
-  let isInWork = false;
-  let cumulativeDistance = 0;
-  let intervalStartDistance = 0;
-
-  const flushCurrent = () => {
-    if (
-      current.distance > 0 &&
-      (current.duration >= 20 || current.distance >= 200)
-    ) {
-      current.startEle = currentStartEle ?? current.startEle;
-      current.endEle = lastEndEle ?? current.endEle;
-      intervals.push(
-        finalizeInterval(
-          current,
-          intervals.length,
-          intervalStartDistance,
-          intervalStartDistance + current.distance,
-        ),
-      );
-    }
-    current = createInterval();
-    currentStartEle = null;
-    lastEndEle = null;
-    isInWork = false;
-  };
-
-  for (const segment of segments) {
-    const isWork = segment.pace <= workThreshold;
-    const isRecovery = segment.pace >= recoveryThreshold;
-
-    if (isWork) {
-      if (!isInWork) {
-        isInWork = true;
-        currentStartEle = segment.startEle;
-        intervalStartDistance = cumulativeDistance;
-      }
-      current.distance += segment.distance;
-      current.duration += segment.duration;
-      current.elevGain += segment.elevGain;
-      current.hrTimeSum += segment.hrTimeSum;
-      current.hrDuration += segment.hrDuration;
-      current.endEle = segment.endEle;
-      lastEndEle = segment.endEle;
-      cumulativeDistance += segment.distance;
-      continue;
-    }
-
-    cumulativeDistance += segment.distance;
-
-    if (isInWork && isRecovery) {
-      flushCurrent();
-    }
-  }
-
-  flushCurrent();
-  return intervals.length
-    ? intervals
-    : splitFixedIntervals(segments, intervalOptions[0]);
-};
-
 export const splitIntervals = (
   segments: Segment[],
   option: IntervalOption,
 ): IntervalRow[] => {
-  if (option.type === "auto") return detectAutoIntervals(segments);
-  return splitFixedIntervals(segments, option);
+  // Fixed distance/duration splits are explicit. The "laps" option uses the
+  // activity's FIT laps when available (handled by the caller via
+  // buildFitIntervals); for tracks without laps (e.g. GPX) it falls back to a
+  // deterministic 1 km split rather than auto-detecting work/recovery.
+  if (option.type === "distance" || option.type === "duration") {
+    return splitFixedIntervals(segments, option);
+  }
+  const oneKm = intervalOptions.find(
+    (o) => o.type === "distance" && o.value === 1000,
+  );
+  return splitFixedIntervals(segments, oneKm ?? intervalOptions[0]);
 };
 
 const normalizeTimestamp = (value: string | Date | undefined): number =>
@@ -692,6 +625,61 @@ export const smoothChartData = (
   return smoothed;
 };
 
+// Pace/gap are clamped to this band for the chart line only, so a slow stop
+// (e.g. 20:00/km) doesn't blow up the axis scale; the real value is kept in
+// `rawValue` for the stats.
+const PACE_DISPLAY_MIN_S = 150;
+const PACE_DISPLAY_MAX_S = 480;
+
+const clampForChart = (value: number, key: MetricKey): number => {
+  if (!Number.isFinite(value)) return value;
+  if (key === "pace" || key === "gap") {
+    return clamp(value, PACE_DISPLAY_MIN_S, PACE_DISPLAY_MAX_S);
+  }
+  return value;
+};
+
+export interface SmoothedStatPoint extends SmoothedChartPoint {
+  // Real (unclamped) primary value, used for the min/avg/max stats.
+  rawValue: number;
+  // Clamped secondary-axis value, present only when a 2nd metric is shown.
+  smoothedValue2?: number;
+}
+
+/**
+ * Build the chart series: distance-smoothed primary (and optional secondary)
+ * metric. `smoothedValue`/`smoothedValue2` are clamped for the line; `rawValue`
+ * keeps the real primary value for the stats.
+ */
+export const buildSmoothedChartData = (
+  points: TrackPoint[],
+  segments: Segment[],
+  primaryKey: MetricKey,
+  secondaryKey: MetricKey | "off",
+  smoothingMeters: number,
+): SmoothedStatPoint[] => {
+  const chartData = buildChartData(points, segments);
+  if (!chartData.length) return [];
+  const primary = smoothChartData(chartData, primaryKey, smoothingMeters);
+  const secondary =
+    secondaryKey !== "off"
+      ? smoothChartData(chartData, secondaryKey, smoothingMeters)
+      : null;
+  return primary.map((point, i) => ({
+    ...point,
+    smoothedValue: clampForChart(point.smoothedValue, primaryKey),
+    rawValue: point.smoothedValue,
+    ...(secondary
+      ? {
+          smoothedValue2: clampForChart(
+            secondary[i].smoothedValue,
+            secondaryKey as MetricKey,
+          ),
+        }
+      : {}),
+  }));
+};
+
 export const computeStats = (
   data: ReadonlyArray<unknown>,
   key: string,
@@ -706,6 +694,49 @@ export const computeStats = (
   const max = Math.max(...values);
   const avg = values.reduce((sum, value) => sum + value, 0) / values.length;
   return { min, max, avg };
+};
+
+export interface RangeStatPoint {
+  distance: number;
+  // The real (unclamped) metric value at this point.
+  value: number;
+}
+
+/**
+ * min/avg/max over a contiguous range of points. min/max are the instantaneous
+ * extremes (non-finite values ignored). The average is metric-aware and always
+ * falls within [min, max]:
+ *  - pace/gap: distance-weighted mean (= moving time / distance), so slower
+ *    running counts proportionally to the ground it covers.
+ *  - else (ele/hr): simple point mean (≈ time-weighted for ~1 Hz samples).
+ */
+export const rangeStats = (
+  points: ReadonlyArray<RangeStatPoint>,
+  key: MetricKey,
+): Stats | null => {
+  const values = points.map((p) => p.value).filter((v) => Number.isFinite(v));
+  if (!values.length) return null;
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+
+  let avg: number;
+  if (key === "pace" || key === "gap") {
+    let weighted = 0;
+    let dist = 0;
+    for (let i = 1; i < points.length; i += 1) {
+      const v = points[i].value;
+      const dd = points[i].distance - points[i - 1].distance;
+      if (Number.isFinite(v) && dd > 0) {
+        weighted += v * dd;
+        dist += dd;
+      }
+    }
+    avg = dist > 0 ? weighted / dist : NaN;
+  } else {
+    avg = values.reduce((sum, v) => sum + v, 0) / values.length;
+  }
+
+  return { min, avg, max };
 };
 
 export const clamp = (value: number, min: number, max: number): number =>

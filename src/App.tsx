@@ -1,13 +1,6 @@
-import { useMemo, useState } from "react";
-import { Badge } from "@/components/ui/badge";
-import {
-  intervalOptions,
-  buildFitIntervals,
-  splitIntervals,
-  parseTrackFile,
-  parseTrackFromBuffer,
-} from "./lib/trackUtils";
-import type { IntervalOption, IntervalRow, Tracks } from "./lib/trackUtils";
+import { useState } from "react";
+import { parseTrackFile, parseTrackFromBuffer } from "./lib/trackUtils";
+import type { Tracks } from "./lib/trackUtils";
 import { useDrive } from "./lib/useDrive";
 import { ChartCard } from "@/components/ChartCard";
 import { TableCard } from "@/components/TableCard";
@@ -24,10 +17,6 @@ const DRIVE_FOLDER_ID = import.meta.env.VITE_GOOGLE_DRIVE_FOLDER_ID as
 export default function App() {
   const [error, setError] = useState<string>("");
   const [tracks, setTracks] = useState<Tracks | null>(null);
-  const [intervalOption, setIntervalOption] = useState<IntervalOption>(
-    intervalOptions.find((option) => option.type === "auto") ||
-      intervalOptions[0],
-  );
 
   const loadTracksFromBuffer = async (
     bytes: ArrayBuffer,
@@ -62,39 +51,18 @@ export default function App() {
       );
     }
   };
-
-  const tableIntervalRows: IntervalRow[] = useMemo(() => {
-    if (!tracks) return [];
-    if (tracks.fitLaps.length > 0 && intervalOption.type === "auto") {
-      return buildFitIntervals(tracks.points, tracks.segments, tracks.fitLaps);
-    }
-    return splitIntervals(tracks.segments, intervalOption);
-  }, [tracks, intervalOption]);
-
   return (
     <div className="mx-auto max-w-5xl px-2 pb-6 sm:px-4 sm:pb-8">
       <header className="mb-4 flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <p className="mb-1.5 text-xs uppercase tracking-[0.16em] text-muted-foreground">
-            GPX + FIT interval analysis
-          </p>
           <h1 className="text-2xl font-semibold leading-tight">
-            Condensed running analysis
+            Running analysis
           </h1>
         </div>
-        <Badge variant="secondary">Mobile-friendly</Badge>
       </header>
 
-      {tracks ? (
-        <>
-          <ChartCard tracks={tracks} />
-          <TableCard
-            intervalOption={intervalOption}
-            onIntervalOptionChange={setIntervalOption}
-            rows={tableIntervalRows}
-          />
-        </>
-      ) : null}
+      {tracks && <ChartCard tracks={tracks} />}
+      {tracks && <TableCard tracks={tracks} />}
 
       <UploadCard
         drive={drive}
